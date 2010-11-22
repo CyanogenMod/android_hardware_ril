@@ -16,6 +16,9 @@ LOCAL_SHARED_LIBRARIES := \
     libhardware_legacy
 
 LOCAL_CFLAGS :=
+ifdef BOARD_USE_NEW_LIBRIL_HTC
+    LOCAL_CFLAGS += -DNEW_LIBRIL_HTC
+endif
 
 LOCAL_MODULE:= libril
 
