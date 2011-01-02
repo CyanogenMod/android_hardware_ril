@@ -74,8 +74,9 @@ LOCAL_CFLAGS += -DMOCK_RIL -D__BSD_VISIBLE
 LOCAL_MODULE_TAGS := debug
 LOCAL_MODULE:= libmock_ril
 
+ifneq ($(filter eng, $(TARGET_BUILD_VARIANT)),)
 include $(BUILD_SHARED_LIBRARY)
-
+endif
 endif
 
 endif
