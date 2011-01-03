@@ -3,10 +3,6 @@
 # XXX using libutils for simulator build only...
 #
 LOCAL_PATH:= $(call my-dir)
-
-# reference-ril only buid for debug variants
-ifneq ($(filter userdebug tests, $(TARGET_BUILD_VARIANT)),)
-
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
@@ -49,6 +45,4 @@ else
       libril
   LOCAL_MODULE:= reference-ril
   include $(BUILD_EXECUTABLE)
-endif
-
 endif
