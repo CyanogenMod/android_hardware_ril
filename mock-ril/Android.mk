@@ -4,10 +4,10 @@
 
 LOCAL_PATH:= $(call my-dir)
 
-# Mock-ril only buid for debug variants
-ifneq ($(filter userdebug tests, $(TARGET_BUILD_VARIANT)),)
-
 ifeq ($(TARGET_ARCH),arm)
+
+# Mock-ril only buid for debug variants
+ifneq ($(filter userdebug eng tests, $(TARGET_BUILD_VARIANT)),)
 
 include $(CLEAR_VARS)
 
@@ -78,6 +78,7 @@ include $(BUILD_SHARED_LIBRARY)
 
 endif
 
+endif
 
 # Java librilproto
 # =======================================================
@@ -92,5 +93,3 @@ LOCAL_SRC_FILES := $(call all-java-files-under, $(src_java) $(gen_src_java))
 
 include $(BUILD_STATIC_JAVA_LIBRARY)
 # =======================================================
-
-endif
