@@ -38,7 +38,9 @@ ifeq (foo,foo)
   LOCAL_LDLIBS += -lpthread
   LOCAL_CFLAGS += -DRIL_SHLIB
   LOCAL_MODULE:= libreference-ril
+  ifneq ($(BOARD_DISABLE_MOCK_RIL),true)
   include $(BUILD_SHARED_LIBRARY)
+  endif
 else
   #build executable
   LOCAL_SHARED_LIBRARIES += \
