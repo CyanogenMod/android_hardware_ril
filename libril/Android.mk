@@ -1,6 +1,11 @@
 # Copyright 2006 The Android Open Source Project
 
 LOCAL_PATH:= $(call my-dir)
+
+ifeq ($(TARGET_PROVIDES_LIBRIL),true)
+    LOCAL_PATH := $(TARGET_DEVICE_DIR)/libril
+endif
+
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES:= \
