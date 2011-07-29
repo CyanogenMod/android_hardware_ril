@@ -1,6 +1,9 @@
 /* //device/system/reference-ril/reference-ril.c
 **
 ** Copyright 2006, The Android Open Source Project
+** Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
+** Not a Contribution, Apache license notifications and license are retained
+** for attribution purposes only.
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -15,6 +18,8 @@
 ** limitations under the License.
 */
 
+#include <telephony/ril.h>
+#include <telephony/ril_cdma_sms.h>
 #include <stdio.h>
 #include <assert.h>
 #include <string.h>
@@ -31,6 +36,7 @@
 #include <getopt.h>
 #include <sys/socket.h>
 #include <cutils/sockets.h>
+#include <cutils/properties.h>
 #include <termios.h>
 #include <sys/system_properties.h>
 
@@ -38,6 +44,9 @@
 #include "hardware/qemu_pipe.h"
 
 #define LOG_TAG "RIL"
+#define LOG_NDEBUG 0
+#define LOG_NDDEBUG 0
+#define LOG_NIDEBUG 0
 #include <utils/Log.h>
 
 #define MAX_AT_RESPONSE 0x1000
@@ -65,41 +74,103 @@ typedef enum {
     SIM_READY = 2, /* SIM_READY means the radio state is RADIO_STATE_SIM_READY */
     SIM_PIN = 3,
     SIM_PUK = 4,
-    SIM_NETWORK_PERSONALIZATION = 5
+    SIM_NETWORK_PERSONALIZATION = 5,
+    RUIM_ABSENT = 6,
+    RUIM_NOT_READY = 7,
+    RUIM_READY = 8,
+    RUIM_PIN = 9,
+    RUIM_PUK = 10,
+    RUIM_NETWORK_PERSONALIZATION = 11
 } SIM_Status;
 
-static void onRequest (int request, void *data, size_t datalen, RIL_Token t);
-static RIL_RadioState currentState();
-static int onSupports (int requestCode);
-static void onCancel (RIL_Token t);
-static const char *getVersion();
+/* Reference RIL Instance IDs */
+enum {
+    REF_RIL_FIRST_INSTANCE_ID = 0,
+    REF_RIL_SECOND_INSTANCE_ID = 1,
+    REF_RIL_MAX_INSTANCE_ID
+};
+
+/* Callback functions for instance 0 */
+static void onRequest_func0 (int request, void *data, size_t datalen, RIL_Token t);
+static RIL_RadioState currentState_func0();
+static int onSupports_func0 (int requestCode);
+static void onCancel_func0 (RIL_Token t);
+static const char *getVersion_func0();
+
+/* Callback functions for instance 1 */
+static void onRequest_func1 (int request, void *data, size_t datalen, RIL_Token t);
+static RIL_RadioState currentState_func1();
+static int onSupports_func1 (int requestCode);
+static void onCancel_func1 (RIL_Token t);
+static const char *getVersion_func1();
+
 static int isRadioOn();
-static SIM_Status getSIMStatus();
-static int getCardStatus(RIL_CardStatus_v6 **pp_card_status);
+static SIM_Status getSIMStatus(int inst_id);
+static int getCardStatus(int inst_id, RIL_CardStatus_v6 **pp_card_status);
 static void freeCardStatus(RIL_CardStatus_v6 *p_card_status);
 static void onDataCallListChanged(void *param);
 
 extern const char * requestToString(int request);
 
+static int isMultiSimEnabled();
+
 /*** Static Variables ***/
-static const RIL_RadioFunctions s_callbacks = {
+static const RIL_RadioFunctions s_callbacks [REF_RIL_MAX_INSTANCE_ID] = {
+{
     RIL_VERSION,
-    onRequest,
-    currentState,
-    onSupports,
-    onCancel,
-    getVersion
+    onRequest_func0,
+    currentState_func0,
+    onSupports_func0,
+    onCancel_func0,
+    getVersion_func0
+},
+{
+    RIL_VERSION,
+    onRequest_func1,
+    currentState_func1,
+    onSupports_func1,
+    onCancel_func1,
+    getVersion_func1
+}
 };
 
-#ifdef RIL_SHLIB
-static const struct RIL_Env *s_rilenv;
+int line_sms = 0;
+int mo_call = 0;
+int mt_ring_counter = 0;
 
-#define RIL_onRequestComplete(t, e, response, responselen) s_rilenv->OnRequestComplete(t,e, response, responselen)
-#define RIL_onUnsolicitedResponse(a,b,c) s_rilenv->OnUnsolicitedResponse(a,b,c)
-#define RIL_requestTimedCallback(a,b,c) s_rilenv->RequestTimedCallback(a,b,c)
+#ifdef RIL_SHLIB
+static const struct RIL_Env *s_rilenv[REF_RIL_MAX_INSTANCE_ID];
+
+#define RIL_onRequestComplete(inst, t, e, response, responselen) do { \
+    if(!isMultiSimEnabled() && inst != REF_RIL_FIRST_INSTANCE_ID) {\
+        ALOGD(" RIL_onRequestComplete: Error: dsds not enabled and inst != REF_RIL_FIRST_INSTANCE_ID"); \
+        break; \
+    } \
+    ALOGD(" RIL_onRequestComplete: inst = %d", inst); \
+    s_rilenv[inst]->OnRequestComplete(t,e, response, responselen); \
+} while (0)
+
+#define RIL_onUnsolicitedResponse(inst, a,b,c) do { \
+    if(!isMultiSimEnabled() && inst != REF_RIL_FIRST_INSTANCE_ID) {\
+        ALOGD(" RIL_onUnsolicitedResponse: Error: dsds not enabled and inst != REF_RIL_FIRST_INSTANCE_ID"); \
+        break; \
+    } \
+    ALOGD(" RIL_onUnsolicitedResponse: inst = %d", inst); \
+    s_rilenv[inst]->OnUnsolicitedResponse(a,b,c); \
+} while (0)
+
+#define RIL_requestTimedCallback(inst, a,b,c) do { \
+    if(!isMultiSimEnabled() && inst != REF_RIL_FIRST_INSTANCE_ID) {\
+        ALOGD(" RIL_requestTimedCallback: Error: dsds not enabled and inst != REF_RIL_FIRST_INSTANCE_ID"); \
+        break; \
+    } \
+    ALOGD(" RIL_requestTimedCallback: inst = %d", inst); \
+    s_rilenv[inst]->RequestTimedCallback(a,b,c); \
+} while (0)
+
 #endif
 
-static RIL_RadioState sState = RADIO_STATE_UNAVAILABLE;
+static RIL_RadioState sState[REF_RIL_MAX_INSTANCE_ID] = {RADIO_STATE_UNAVAILABLE, RADIO_STATE_UNAVAILABLE};
 
 static pthread_mutex_t s_state_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t s_state_cond = PTHREAD_COND_INITIALIZER;
@@ -133,7 +204,10 @@ static int s_expectAnswer = 0;
 #endif /* WORKAROUND_ERRONEOUS_ANSWER */
 
 static void pollSIMState (void *param);
-static void setRadioState(RIL_RadioState newState);
+//Need to check all below 5 functions
+static void setRadioState (int inst_id, RIL_RadioState newState);
+//static void setRadioTechnology(int inst_id, ModemInfo *mdm, int newtech);
+//static int techFamilyFromModemType(int mdmtype);
 
 static int clccStateToRILState(int state, RIL_CallState *p_state)
 
@@ -214,8 +288,9 @@ error:
 
 
 /** do post-AT+CFUN=1 initialization */
-static void onRadioPowerOn()
+static void onRadioPowerOn(int inst_id)
 {
+    ALOGD("onRadioPowerOn(%d)", inst_id);
 #ifdef USE_TI_COMMANDS
     /*  Must be after CFUN=1 */
     /*  TI specific -- notifications for CPHS things such */
@@ -227,7 +302,7 @@ static void onRadioPowerOn()
     at_send_command("AT%CTZV=1", NULL);
 #endif
 
-    pollSIMState(NULL);
+    pollSIMState((void *)inst_id);
 }
 
 /** do post- SIM ready initialization */
@@ -247,7 +322,7 @@ static void onSIMReady()
     at_send_command("AT+CNMI=1,2,2,1,1", NULL);
 }
 
-static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
+static void requestRadioPower(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     int onOff;
 
@@ -257,11 +332,12 @@ static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
     assert (datalen >= sizeof(int *));
     onOff = ((int *)data)[0];
 
-    if (onOff == 0 && sState != RADIO_STATE_OFF) {
+    ALOGD("onOff: %d, sState: %d\n", onOff, sState[inst_id]);
+    if (onOff == 0 && sState[inst_id] != RADIO_STATE_OFF) {
         err = at_send_command("AT+CFUN=0", &p_response);
        if (err < 0 || p_response->success == 0) goto error;
-        setRadioState(RADIO_STATE_OFF);
-    } else if (onOff > 0 && sState == RADIO_STATE_OFF) {
+        setRadioState (inst_id, RADIO_STATE_OFF);
+    } else if (onOff > 0 && sState[inst_id] == RADIO_STATE_OFF) {
         err = at_send_command("AT+CFUN=1", &p_response);
         if (err < 0|| p_response->success == 0) {
             // Some stacks return an error when there is no SIM,
@@ -273,30 +349,31 @@ static void requestRadioPower(void *data, size_t datalen, RIL_Token t)
                 goto error;
             }
         }
-        setRadioState(RADIO_STATE_SIM_NOT_READY);
+        setRadioState (inst_id, RADIO_STATE_ON);
     }
 
     at_response_free(p_response);
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
     return;
 error:
     at_response_free(p_response);
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
-static void requestOrSendDataCallList(RIL_Token *t);
+static void requestOrSendDataCallList(int inst_id, RIL_Token *t);
 
 static void onDataCallListChanged(void *param)
 {
-    requestOrSendDataCallList(NULL);
+    int inst_id = (int)param;
+    requestOrSendDataCallList(inst_id, NULL);
 }
 
-static void requestDataCallList(void *data, size_t datalen, RIL_Token t)
+static void requestDataCallList(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
-    requestOrSendDataCallList(&t);
+    requestOrSendDataCallList(inst_id, &t);
 }
 
-static void requestOrSendDataCallList(RIL_Token *t)
+static void requestOrSendDataCallList(int inst_id, RIL_Token *t)
 {
     ATResponse *p_response;
     ATLine *p_cur;
@@ -307,9 +384,9 @@ static void requestOrSendDataCallList(RIL_Token *t)
     err = at_send_command_multiline ("AT+CGACT?", "+CGACT:", &p_response);
     if (err != 0 || p_response->success == 0) {
         if (t != NULL)
-            RIL_onRequestComplete(*t, RIL_E_GENERIC_FAILURE, NULL, 0);
+            RIL_onRequestComplete(inst_id, *t, RIL_E_GENERIC_FAILURE, NULL, 0);
         else
-            RIL_onUnsolicitedResponse(RIL_UNSOL_DATA_CALL_LIST_CHANGED,
+            RIL_onUnsolicitedResponse(inst_id, RIL_UNSOL_DATA_CALL_LIST_CHANGED,
                                       NULL, 0);
         return;
     }
@@ -324,9 +401,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
     int i;
     for (i = 0; i < n; i++) {
         responses[i].status = -1;
-#ifndef HCRADIO
         responses[i].suggestedRetryTime = -1;
-#endif
         responses[i].cid = -1;
         responses[i].active = -1;
         responses[i].type = "";
@@ -361,9 +436,9 @@ static void requestOrSendDataCallList(RIL_Token *t)
     err = at_send_command_multiline ("AT+CGDCONT?", "+CGDCONT:", &p_response);
     if (err != 0 || p_response->success == 0) {
         if (t != NULL)
-            RIL_onRequestComplete(*t, RIL_E_GENERIC_FAILURE, NULL, 0);
+            RIL_onRequestComplete(inst_id, *t, RIL_E_GENERIC_FAILURE, NULL, 0);
         else
-            RIL_onUnsolicitedResponse(RIL_UNSOL_DATA_CALL_LIST_CHANGED,
+            RIL_onUnsolicitedResponse(inst_id, RIL_UNSOL_DATA_CALL_LIST_CHANGED,
                                       NULL, 0);
         return;
     }
@@ -467,10 +542,10 @@ static void requestOrSendDataCallList(RIL_Token *t)
     at_response_free(p_response);
 
     if (t != NULL)
-        RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
+        RIL_onRequestComplete(inst_id, *t, RIL_E_SUCCESS, responses,
                               n * sizeof(RIL_Data_Call_Response_v6));
     else
-        RIL_onUnsolicitedResponse(RIL_UNSOL_DATA_CALL_LIST_CHANGED,
+        RIL_onUnsolicitedResponse(inst_id, RIL_UNSOL_DATA_CALL_LIST_CHANGED,
                                   responses,
                                   n * sizeof(RIL_Data_Call_Response_v6));
 
@@ -478,16 +553,16 @@ static void requestOrSendDataCallList(RIL_Token *t)
 
 error:
     if (t != NULL)
-        RIL_onRequestComplete(*t, RIL_E_GENERIC_FAILURE, NULL, 0);
+        RIL_onRequestComplete(inst_id, *t, RIL_E_GENERIC_FAILURE, NULL, 0);
     else
-        RIL_onUnsolicitedResponse(RIL_UNSOL_DATA_CALL_LIST_CHANGED,
+        RIL_onUnsolicitedResponse(inst_id, RIL_UNSOL_DATA_CALL_LIST_CHANGED,
                                   NULL, 0);
 
     at_response_free(p_response);
 }
 
 static void requestQueryNetworkSelectionMode(
-                void *data, size_t datalen, RIL_Token t)
+                int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     int err;
     ATResponse *p_response = NULL;
@@ -514,23 +589,28 @@ static void requestQueryNetworkSelectionMode(
         goto error;
     }
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(int));
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, &response, sizeof(int));
     at_response_free(p_response);
     return;
 error:
     at_response_free(p_response);
     ALOGE("requestQueryNetworkSelectionMode must never return error when radio is on");
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
 }
 
 static void sendCallStateChanged(void *param)
 {
+    int inst_id = (int)param;
+
+    ALOGD("sendCallStateChanged () : inst_id = %d", inst_id);
+
     RIL_onUnsolicitedResponse (
+        inst_id,
         RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED,
         NULL, 0);
 }
 
-static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
+static void requestGetCurrentCalls(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     int err;
     ATResponse *p_response;
@@ -552,7 +632,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
     err = at_send_command_multiline ("AT+CLCC", "+CLCC:", &p_response);
 
     if (err != 0 || p_response->success == 0) {
-        RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+        RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
         return;
     }
 
@@ -633,7 +713,7 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
     s_repollCallsCount = 0;
 #endif /*WORKAROUND_ERRONEOUS_ANSWER*/
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, pp_calls,
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, pp_calls,
             countValidCalls * sizeof (RIL_Call *));
 
     at_response_free(p_response);
@@ -644,21 +724,114 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 #else
     if (needRepoll) {
 #endif
-        RIL_requestTimedCallback (sendCallStateChanged, NULL, &TIMEVAL_CALLSTATEPOLL);
+        RIL_requestTimedCallback (inst_id, sendCallStateChanged, (void *)inst_id, &TIMEVAL_CALLSTATEPOLL);
     }
 
     return;
 error:
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 }
 
-static void requestDial(void *data, size_t datalen, RIL_Token t)
+static RIL_SelectUiccSub currentSelectedSub[2] = {
+    {-1, -1, RIL_SUBSCRIPTION_1, RIL_UICC_SUBSCRIPTION_DEACTIVATE },
+    {-1, -1, RIL_SUBSCRIPTION_1, RIL_UICC_SUBSCRIPTION_DEACTIVATE }
+};
+
+static int isAppReady(int slot, int app_index) {
+    int i = 0;
+
+    for (i=0; i<2; i++) {
+        if (currentSelectedSub[i].act_status == RIL_UICC_SUBSCRIPTION_ACTIVATE
+                && currentSelectedSub[i].slot == slot
+                && currentSelectedSub[i].app_index == app_index) {
+            ALOGD("isAppReady : slot = %d app_index = %d is READY", slot, app_index);
+            return 1;
+        }
+    }
+    ALOGD("isAppReady : slot = %d app_index = %d is NOT READY", slot, app_index);
+    return 0;
+}
+
+static void setUiccSubscriptionSource(int inst_id, int request, void *data, size_t datalen, RIL_Token t)
+{
+    RIL_SelectUiccSub *uiccSubscrInfo;
+    uiccSubscrInfo = (RIL_SelectUiccSub *)data;
+    int response = 0;
+    int slot = 0;
+
+    ALOGD("setUiccSubscriptionSource() : inst_id = %d", inst_id);
+    slot = uiccSubscrInfo->slot;
+    currentSelectedSub[slot].slot = uiccSubscrInfo->slot;
+    currentSelectedSub[slot].app_index = uiccSubscrInfo->app_index;
+    currentSelectedSub[slot].sub_type = uiccSubscrInfo->sub_type;
+    currentSelectedSub[slot].act_status = uiccSubscrInfo->act_status;
+
+    // TODO: DSDS: Need to implement this.
+    // workarround: send success for now.
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
+
+    if (uiccSubscrInfo->act_status == RIL_UICC_SUBSCRIPTION_ACTIVATE) {
+        ALOGD("setUiccSubscriptionSource() : Activate Request: sending SUBSCRIPTION_STATUS_CHANGED");
+        response = 1; // ACTIVATED
+        RIL_onUnsolicitedResponse (
+            inst_id,
+            RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED,
+            &response, sizeof(response));
+    } else {
+        ALOGD("setUiccSubscriptionSource() : Deactivate Request");
+    }
+    RIL_onUnsolicitedResponse(uiccSubscrInfo->slot, RIL_UNSOL_RESPONSE_SIM_STATUS_CHANGED, NULL, 0);
+}
+
+static void setSubscriptionMode(int instance_id, int request, void *data, size_t datalen, RIL_Token t)
+{
+    ALOGD("getUiccSubscriptionSource() : instance_id = %d", instance_id);
+    // TODO: DSDS: Need to implement this.
+    // workarround: send success for now.
+    RIL_onRequestComplete(instance_id, t, RIL_E_SUCCESS, NULL, 0);
+}
+
+
+static void getUiccSubscriptionSource(int inst_id, int request, void *data, size_t datalen, RIL_Token t)
+{
+    ALOGD("getUiccSubscriptionSource() : inst_id = %d", inst_id);
+    // TODO: DSDS: Need to implement this.
+    // workarround: send success for now.
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
+}
+
+static void setDataSubscriptionSource(int inst_id, int request, void *data, size_t datalen, RIL_Token t)
+{
+    ALOGD("setDataSubscriptionSource() : inst_id = %d", inst_id) ;
+    // TODO: DSDS: Need to implement this.
+    // workarround: send success for now.
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
+
+    inst_id = (inst_id == 0) ? 1 : 0;
+    ALOGD("setDataSubscriptionSource() : sending all data disconnected on SUB: = %d", inst_id);
+    RIL_onUnsolicitedResponse(inst_id, RIL_UNSOL_DATA_CALL_LIST_CHANGED,
+                              NULL, 0);
+}
+
+static void getDataSubscriptionSource(int inst_id, int request, void *data, size_t datalen, RIL_Token t)
+{
+    ALOGD("getDataSubscriptionSource() : inst_id = %d", inst_id);
+    // TODO: DSDS: Need to implement this.
+    // workarround: send success for now.
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
+}
+
+
+static void requestDial(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     RIL_Dial *p_dial;
     char *cmd;
     const char *clir;
     int ret;
+
+    ALOGD("requestDial() : inst_id = %d", inst_id);
+    mo_call = 1;
 
     p_dial = (RIL_Dial *)data;
 
@@ -677,10 +850,10 @@ static void requestDial(void *data, size_t datalen, RIL_Token t)
 
     /* success or failure is ignored by the upper layer here.
        it will call GET_CURRENT_CALLS and determine success that way */
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
 }
 
-static void requestWriteSmsToSim(void *data, size_t datalen, RIL_Token t)
+static void requestWriteSmsToSim(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     RIL_SMS_WriteArgs *p_args;
     char *cmd;
@@ -697,21 +870,24 @@ static void requestWriteSmsToSim(void *data, size_t datalen, RIL_Token t)
 
     if (err != 0 || p_response->success == 0) goto error;
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
     at_response_free(p_response);
 
     return;
 error:
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 }
 
-static void requestHangup(void *data, size_t datalen, RIL_Token t)
+static void requestHangup(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     int *p_line;
 
     int ret;
     char *cmd;
+
+    ALOGD("requestHangup() : inst_id = %d", inst_id);
+    mo_call = 0;
 
     p_line = (int *)data;
 
@@ -725,20 +901,22 @@ static void requestHangup(void *data, size_t datalen, RIL_Token t)
 
     /* success or failure is ignored by the upper layer here.
        it will call GET_CURRENT_CALLS and determine success that way */
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
 }
 
-static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
+static void requestSignalStrength(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     ATResponse *p_response = NULL;
     int err;
-    int response[2];
     char *line;
+    int count =0;
+    int numofElements=sizeof(RIL_SignalStrength_v6)/sizeof(int);
+    int response[numofElements];
 
     err = at_send_command_singleline("AT+CSQ", "+CSQ:", &p_response);
 
     if (err < 0 || p_response->success == 0) {
-        RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+        RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
         goto error;
     }
 
@@ -747,24 +925,23 @@ static void requestSignalStrength(void *data, size_t datalen, RIL_Token t)
     err = at_tok_start(&line);
     if (err < 0) goto error;
 
-    err = at_tok_nextint(&line, &(response[0]));
-    if (err < 0) goto error;
+    for (count =0; count < numofElements; count ++) {
+        err = at_tok_nextint(&line, &(response[count]));
+        if (err < 0) goto error;
+    }
 
-    err = at_tok_nextint(&line, &(response[1]));
-    if (err < 0) goto error;
-
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, response, sizeof(response));
 
     at_response_free(p_response);
     return;
 
 error:
     ALOGE("requestSignalStrength must never return an error when radio is on");
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 }
 
-static void requestRegistrationState(int request, void *data,
+static void requestRegistrationState(int inst_id, int request, void *data,
                                         size_t datalen, RIL_Token t)
 {
     int err;
@@ -889,17 +1066,17 @@ static void requestRegistrationState(int request, void *data,
     if (count > 3)
         asprintf(&responseStr[3], "%d", response[3]);
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, responseStr, count*sizeof(char*));
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, responseStr, count*sizeof(char*));
     at_response_free(p_response);
 
     return;
 error:
     ALOGE("requestRegistrationState must never return an error when radio is on");
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 }
 
-static void requestOperator(void *data, size_t datalen, RIL_Token t)
+static void requestOperator(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     int err;
     int i;
@@ -910,6 +1087,8 @@ static void requestOperator(void *data, size_t datalen, RIL_Token t)
     memset(response, 0, sizeof(response));
 
     ATResponse *p_response = NULL;
+
+    ALOGD("requestOperator(): inst_id = %d", inst_id);
 
     err = at_send_command_multiline(
         "AT+COPS=3,0;+COPS?;+COPS=3,1;+COPS?;+COPS=3,2;+COPS?",
@@ -960,17 +1139,17 @@ static void requestOperator(void *data, size_t datalen, RIL_Token t)
         goto error;
     }
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, response, sizeof(response));
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, response, sizeof(response));
     at_response_free(p_response);
 
     return;
 error:
     ALOGE("requestOperator must not return error when radio is on");
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 }
 
-static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
+static void requestSendSMS(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     int err;
     const char *smsc;
@@ -980,15 +1159,19 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
     RIL_SMS_Response response;
     ATResponse *p_response = NULL;
 
+    ALOGD("requestSendSMS datalen =%d", datalen);
     smsc = ((const char **)data)[0];
     pdu = ((const char **)data)[1];
 
     tpLayerLength = strlen(pdu)/2;
 
+    ALOGD("requestSendSMS(): inst_id = %d", inst_id);
+
     // "NULL for default SMSC"
     if (smsc == NULL) {
         smsc= "00";
     }
+    ALOGD("smsc=%s, pdu=%s", smsc, pdu);
 
     asprintf(&cmd1, "AT+CMGS=%d", tpLayerLength);
     asprintf(&cmd2, "%s%s", smsc, pdu);
@@ -1001,16 +1184,16 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 
     /* FIXME fill in messageRef and ackPDU */
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(response));
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, &response, sizeof(response));
     at_response_free(p_response);
 
     return;
 error:
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 }
 
-static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
+static void requestSetupDataCall(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     const char *apn;
     char *cmd;
@@ -1122,18 +1305,60 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
         }
     }
 
-    requestOrSendDataCallList(&t);
+    requestOrSendDataCallList(inst_id, &t);
 
     at_response_free(p_response);
 
     return;
 error:
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 
 }
 
-static void requestSMSAcknowledge(void *data, size_t datalen, RIL_Token t)
+static void requestGetDataCallProfile(int inst_id, void *data, size_t datalen, RIL_Token t)
+{
+    //ATResponse *p_response = NULL;
+    char *response = NULL;
+    char *respPtr = NULL;
+    int  responseLen = 0;
+    int  numProfiles = 1; // hard coded to return only one profile
+    int  i = 0;
+
+    // TBD: AT command support
+
+    int mallocSize = 0;
+    mallocSize += (sizeof(RIL_DataCallProfileInfo));
+
+    response = (char*)alloca(mallocSize + sizeof(int));
+    respPtr = response;
+    memcpy(respPtr, (char*)&numProfiles, sizeof(numProfiles));
+    respPtr += sizeof(numProfiles);
+    responseLen += sizeof(numProfiles);
+
+    // Fill up 'numProfiles' dummy 'RIL_DataCallProfileInfo;
+    for (i = 0; i < numProfiles; i++)
+    {
+        RIL_DataCallProfileInfo dummyProfile;
+
+        // Adding arbitrary values for the dummy response
+        dummyProfile.profileId = i+1;
+        dummyProfile.priority = i+10;
+        ALOGI("profileId %d priority %d", dummyProfile.profileId, dummyProfile.priority);
+
+        responseLen += sizeof(RIL_DataCallProfileInfo);
+        memcpy(respPtr, (char*)&dummyProfile, sizeof(RIL_DataCallProfileInfo));
+        respPtr += sizeof(RIL_DataCallProfileInfo);
+    }
+
+    ALOGI("requestGetDataCallProfile(): inst_id = %d, reponseLen:%d, %d profiles", inst_id, responseLen, i);
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, response, responseLen);
+
+    // at_response_free(p_response);
+    return;
+}
+
+static void requestSMSAcknowledge(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     int ackSuccess;
     int err;
@@ -1149,13 +1374,13 @@ static void requestSMSAcknowledge(void *data, size_t datalen, RIL_Token t)
         goto error;
     }
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
 error:
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
 
 }
 
-static void  requestSIM_IO(void *data, size_t datalen, RIL_Token t)
+static void  requestSIM_IO(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     ATResponse *p_response = NULL;
     RIL_SIM_IO_Response sr;
@@ -1167,6 +1392,8 @@ static void  requestSIM_IO(void *data, size_t datalen, RIL_Token t)
     memset(&sr, 0, sizeof(sr));
 
     p_args = (RIL_SIM_IO_v6 *)data;
+
+    ALOGD("requestSIM_IO(): inst_id = %d fileid = %d", inst_id, p_args->fileid);
 
     /* FIXME handle pin2 */
 
@@ -1202,19 +1429,30 @@ static void  requestSIM_IO(void *data, size_t datalen, RIL_Token t)
         if (err < 0) goto error;
     }
 
-    RIL_onRequestComplete(t, RIL_E_SUCCESS, &sr, sizeof(sr));
+    if (p_args->fileid == 0x2FE2) {
+        if (p_args->command == 0xb0) {
+            if (inst_id == REF_RIL_SECOND_INSTANCE_ID) {
+                sr.simResponse = "88004433112288557700";
+            }
+            ALOGD("requestSIM_IO(): Read Request for ICCID on inst_id - %d. ICCID = %s",
+                    inst_id, sr.simResponse);
+        }
+    }
+
+
+    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, &sr, sizeof(sr));
     at_response_free(p_response);
     free(cmd);
 
     return;
 error:
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
     free(cmd);
 
 }
 
-static void  requestEnterSimPin(void*  data, size_t  datalen, RIL_Token  t)
+static void  requestEnterSimPin(int inst_id, void*  data, size_t  datalen, RIL_Token  t)
 {
     ATResponse   *p_response = NULL;
     int           err;
@@ -1223,32 +1461,33 @@ static void  requestEnterSimPin(void*  data, size_t  datalen, RIL_Token  t)
 
     if ( datalen == sizeof(char*) ) {
         asprintf(&cmd, "AT+CPIN=%s", strings[0]);
-    } else if ( datalen == 2*sizeof(char*) ) {
+    } else if ( datalen == 2*sizeof(char*) || datalen == 3 * sizeof(char*)) {
         asprintf(&cmd, "AT+CPIN=%s,%s", strings[0], strings[1]);
-    } else
+    } else {
         goto error;
+    }
 
     err = at_send_command_singleline(cmd, "+CPIN:", &p_response);
     free(cmd);
 
     if (err < 0 || p_response->success == 0) {
 error:
-        RIL_onRequestComplete(t, RIL_E_PASSWORD_INCORRECT, NULL, 0);
+        RIL_onRequestComplete(inst_id, t, RIL_E_PASSWORD_INCORRECT, NULL, 0);
     } else {
-        RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+        RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
     }
     at_response_free(p_response);
 }
 
 
-static void  requestSendUSSD(void *data, size_t datalen, RIL_Token t)
+static void  requestSendUSSD(int inst_id, void *data, size_t datalen, RIL_Token t)
 {
     const char *ussdRequest;
 
     ussdRequest = (char *)(data);
 
 
-    RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
+    RIL_onRequestComplete(inst_id, t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
 
 // @@@ TODO
 
@@ -1270,31 +1509,32 @@ static void  requestSendUSSD(void *data, size_t datalen, RIL_Token t)
  * the previous command has completed).
  */
 static void
-onRequest (int request, void *data, size_t datalen, RIL_Token t)
+onRequest (int inst_id, int request, void *data, size_t datalen, RIL_Token t)
 {
     ATResponse *p_response;
     int err;
 
-    ALOGD("onRequest: %s", requestToString(request));
+    ALOGD("onRequest: %s, inst_id = %d", requestToString(request), inst_id);
 
     /* Ignore all requests except RIL_REQUEST_GET_SIM_STATUS
      * when RADIO_STATE_UNAVAILABLE.
      */
-    if (sState == RADIO_STATE_UNAVAILABLE
-        && request != RIL_REQUEST_GET_SIM_STATUS
+    if (sState[inst_id] == RADIO_STATE_UNAVAILABLE
+        && !(request == RIL_REQUEST_GET_SIM_STATUS || request == RIL_REQUEST_GET_DATA_CALL_PROFILE)
     ) {
-        RIL_onRequestComplete(t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
+        RIL_onRequestComplete(inst_id, t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
         return;
     }
 
     /* Ignore all non-power requests when RADIO_STATE_OFF
      * (except RIL_REQUEST_GET_SIM_STATUS)
      */
-    if (sState == RADIO_STATE_OFF
+    if (sState[inst_id] == RADIO_STATE_OFF
         && !(request == RIL_REQUEST_RADIO_POWER
-            || request == RIL_REQUEST_GET_SIM_STATUS)
+            || request == RIL_REQUEST_GET_SIM_STATUS
+            || request == RIL_REQUEST_GET_DATA_CALL_PROFILE)
     ) {
-        RIL_onRequestComplete(t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
+        RIL_onRequestComplete(inst_id, t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
         return;
     }
 
@@ -1304,7 +1544,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             char *p_buffer;
             int buffer_size;
 
-            int result = getCardStatus(&p_card_status);
+            int result = getCardStatus(inst_id, &p_card_status);
             if (result == RIL_E_SUCCESS) {
                 p_buffer = (char *)p_card_status;
                 buffer_size = sizeof(*p_card_status);
@@ -1312,18 +1552,18 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
                 p_buffer = NULL;
                 buffer_size = 0;
             }
-            RIL_onRequestComplete(t, result, p_buffer, buffer_size);
+            RIL_onRequestComplete(inst_id, t, result, p_buffer, buffer_size);
             freeCardStatus(p_card_status);
             break;
         }
         case RIL_REQUEST_GET_CURRENT_CALLS:
-            requestGetCurrentCalls(data, datalen, t);
+            requestGetCurrentCalls(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_DIAL:
-            requestDial(data, datalen, t);
+            requestDial(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_HANGUP:
-            requestHangup(data, datalen, t);
+            requestHangup(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_HANGUP_WAITING_OR_BACKGROUND:
             // 3GPP 22.030 6.5.5
@@ -1333,17 +1573,18 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             break;
         case RIL_REQUEST_HANGUP_FOREGROUND_RESUME_BACKGROUND:
             // 3GPP 22.030 6.5.5
             // "Releases all active calls (if any exist) and accepts
             //  the other (held or waiting) call."
             at_send_command("AT+CHLD=1", NULL);
+            mo_call = 0;
 
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             break;
         case RIL_REQUEST_SWITCH_WAITING_OR_HOLDING_AND_ACTIVE:
             // 3GPP 22.030 6.5.5
@@ -1357,7 +1598,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             break;
         case RIL_REQUEST_ANSWER:
             at_send_command("ATA", NULL);
@@ -1368,7 +1609,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             break;
         case RIL_REQUEST_CONFERENCE:
             // 3GPP 22.030 6.5.5
@@ -1377,7 +1618,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             break;
         case RIL_REQUEST_UDUB:
             /* user determined user busy */
@@ -1386,7 +1627,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 
             /* success or failure is ignored by the upper layer here.
                it will call GET_CURRENT_CALLS and determine success that way */
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             break;
 
         case RIL_REQUEST_SEPARATE_CONNECTION:
@@ -1400,25 +1641,25 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
                 if (party > 0 && party < 10) {
                     sprintf(cmd, "AT+CHLD=2%d", party);
                     at_send_command(cmd, NULL);
-                    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+                    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
                 } else {
-                    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+                    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
                 }
             }
             break;
 
         case RIL_REQUEST_SIGNAL_STRENGTH:
-            requestSignalStrength(data, datalen, t);
+            requestSignalStrength(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_VOICE_REGISTRATION_STATE:
         case RIL_REQUEST_DATA_REGISTRATION_STATE:
-            requestRegistrationState(request, data, datalen, t);
+            requestRegistrationState(inst_id, request, data, datalen, t);
             break;
         case RIL_REQUEST_OPERATOR:
-            requestOperator(data, datalen, t);
+            requestOperator(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_RADIO_POWER:
-            requestRadioPower(data, datalen, t);
+            requestRadioPower(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_DTMF: {
             char c = ((char *)data)[0];
@@ -1426,17 +1667,20 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             asprintf(&cmd, "AT+VTS=%c", (int)c);
             at_send_command(cmd, NULL);
             free(cmd);
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             break;
         }
         case RIL_REQUEST_SEND_SMS:
-            requestSendSMS(data, datalen, t);
+            requestSendSMS(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_SETUP_DATA_CALL:
-            requestSetupDataCall(data, datalen, t);
+            requestSetupDataCall(inst_id, data, datalen, t);
+            break;
+        case RIL_REQUEST_GET_DATA_CALL_PROFILE:
+            requestGetDataCallProfile(inst_id, data, datalen, t);
             break;
         case RIL_REQUEST_SMS_ACKNOWLEDGE:
-            requestSMSAcknowledge(data, datalen, t);
+            requestSMSAcknowledge(inst_id, data, datalen, t);
             break;
 
         case RIL_REQUEST_GET_IMSI:
@@ -1444,33 +1688,34 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             err = at_send_command_numeric("AT+CIMI", &p_response);
 
             if (err < 0 || p_response->success == 0) {
-                RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+                RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
             } else {
-                RIL_onRequestComplete(t, RIL_E_SUCCESS,
+                RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS,
                     p_response->p_intermediates->line, sizeof(char *));
             }
             at_response_free(p_response);
             break;
 
         case RIL_REQUEST_GET_IMEI:
+            ALOGD("RIL_REQUEST_GET_IMEI");
             p_response = NULL;
             err = at_send_command_numeric("AT+CGSN", &p_response);
 
             if (err < 0 || p_response->success == 0) {
-                RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+                RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
             } else {
-                RIL_onRequestComplete(t, RIL_E_SUCCESS,
+                RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS,
                     p_response->p_intermediates->line, sizeof(char *));
             }
             at_response_free(p_response);
             break;
 
         case RIL_REQUEST_SIM_IO:
-            requestSIM_IO(data,datalen,t);
+            requestSIM_IO(inst_id, data,datalen,t);
             break;
 
         case RIL_REQUEST_SEND_USSD:
-            requestSendUSSD(data, datalen, t);
+            requestSendUSSD(inst_id, data, datalen, t);
             break;
 
         case RIL_REQUEST_CANCEL_USSD:
@@ -1478,9 +1723,9 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             err = at_send_command_numeric("AT+CUSD=2", &p_response);
 
             if (err < 0 || p_response->success == 0) {
-                RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+                RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
             } else {
-                RIL_onRequestComplete(t, RIL_E_SUCCESS,
+                RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS,
                     p_response->p_intermediates->line, sizeof(char *));
             }
             at_response_free(p_response);
@@ -1491,16 +1736,16 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             break;
 
         case RIL_REQUEST_DATA_CALL_LIST:
-            requestDataCallList(data, datalen, t);
+            requestDataCallList(inst_id, data, datalen, t);
             break;
 
         case RIL_REQUEST_QUERY_NETWORK_SELECTION_MODE:
-            requestQueryNetworkSelectionMode(data, datalen, t);
+            requestQueryNetworkSelectionMode(inst_id, data, datalen, t);
             break;
 
         case RIL_REQUEST_OEM_HOOK_RAW:
             // echo back data
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, data, datalen);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, data, datalen);
             break;
 
 
@@ -1517,12 +1762,12 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             }
 
             // echo back strings
-            RIL_onRequestComplete(t, RIL_E_SUCCESS, data, datalen);
+            RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, data, datalen);
             break;
         }
 
         case RIL_REQUEST_WRITE_SMS_TO_SIM:
-            requestWriteSmsToSim(data, datalen, t);
+            requestWriteSmsToSim(inst_id, data, datalen, t);
             break;
 
         case RIL_REQUEST_DELETE_SMS_ON_SIM: {
@@ -1532,9 +1777,9 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             err = at_send_command(cmd, &p_response);
             free(cmd);
             if (err < 0 || p_response->success == 0) {
-                RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+                RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
             } else {
-                RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+                RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, NULL, 0);
             }
             at_response_free(p_response);
             break;
@@ -1546,24 +1791,112 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
         case RIL_REQUEST_ENTER_SIM_PUK2:
         case RIL_REQUEST_CHANGE_SIM_PIN:
         case RIL_REQUEST_CHANGE_SIM_PIN2:
-            requestEnterSimPin(data, datalen, t);
+            requestEnterSimPin(inst_id, data, datalen, t);
             break;
 
+/* TODO:       case RIL_REQUEST_VOICE_RADIO_TECH:
+            {
+                int techfam = techFamilyFromModemType(TECH(sMdmInfo));
+                if (techfam < 0 )
+                    RIL_onRequestComplete(inst_id, t, RIL_E_GENERIC_FAILURE, NULL, 0);
+                else
+                    RIL_onRequestComplete(inst_id, t, RIL_E_SUCCESS, &techfam, sizeof(&techfam));
+            }
+            break;*/
+
+        case RIL_REQUEST_SET_UICC_SUBSCRIPTION:
+            setUiccSubscriptionSource(inst_id, request, data, datalen, t);
+            break;
+        case RIL_REQUEST_SET_DATA_SUBSCRIPTION:
+            setDataSubscriptionSource(inst_id, request, data, datalen, t);
+            break;
+        case RIL_REQUEST_GET_UICC_SUBSCRIPTION:
+            getUiccSubscriptionSource(inst_id, request, data, datalen, t);
+            break;
+        case RIL_REQUEST_GET_DATA_SUBSCRIPTION:
+            getDataSubscriptionSource(inst_id, request, data, datalen, t);
+            break;
+        case RIL_REQUEST_SET_SUBSCRIPTION_MODE:
+            setSubscriptionMode(inst_id, request, data, datalen, t);
+            break;
         default:
-            RIL_onRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
+            ALOGD("Request not supported. Tech:" );
+            RIL_onRequestComplete(inst_id, t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
             break;
     }
 }
+
+/**
+ * Call from RIL instance 0 to us to make a RIL_REQUEST
+ *
+ * Must be completed with a call to RIL_onRequestComplete()
+ *
+ * RIL_onRequestComplete() may be called from any thread, before or after
+ * this function returns.
+ *
+ * Will always be called from the same thread, so returning here implies
+ * that the radio is ready to process another command (whether or not
+ * the previous command has completed).
+ */
+static void
+onRequest_func0 (int request, void *data, size_t datalen, RIL_Token t)
+{
+    onRequest (REF_RIL_FIRST_INSTANCE_ID, request, data, datalen, t);
+}
+
+/**
+ * Call from RIL instance 1 to us to make a RIL_REQUEST
+ *
+ * Must be completed with a call to RIL_onRequestComplete()
+ *
+ * RIL_onRequestComplete() may be called from any thread, before or after
+ * this function returns.
+ *
+ * Will always be called from the same thread, so returning here implies
+ * that the radio is ready to process another command (whether or not
+ * the previous command has completed).
+ */
+static void
+onRequest_func1 (int request, void *data, size_t datalen, RIL_Token t)
+{
+    onRequest (REF_RIL_SECOND_INSTANCE_ID, request, data, datalen, t);
+}
+
 
 /**
  * Synchronous call from the RIL to us to return current radio state.
  * RADIO_STATE_UNAVAILABLE should be the initial state.
  */
 static RIL_RadioState
-currentState()
+currentState(int inst_id)
 {
-    return sState;
+    if (inst_id == REF_RIL_FIRST_INSTANCE_ID) {
+        return sState[REF_RIL_FIRST_INSTANCE_ID];
+    } else {
+        return sState[REF_RIL_SECOND_INSTANCE_ID];
+    }
 }
+
+/**
+ * Call from RIL instance 0 for currentState
+ */
+static RIL_RadioState
+currentState_func0()
+{
+    ALOGD("currentState_func0");
+    return currentState(REF_RIL_FIRST_INSTANCE_ID);
+}
+
+/**
+ * Call from RIL instance 1 for currentState
+ */
+static RIL_RadioState
+currentState_func1()
+{
+    ALOGD("currentState_func1");
+    return currentState(REF_RIL_SECOND_INSTANCE_ID);
+}
+
 /**
  * Call from RIL to us to find out whether a specific request code
  * is supported by this implementation.
@@ -1572,32 +1905,107 @@ currentState()
  */
 
 static int
-onSupports (int requestCode)
+onSupports (int inst_id, int requestCode)
 {
     //@@@ todo
 
     return 1;
 }
 
-static void onCancel (RIL_Token t)
+/**
+ * Call from RIL instance 0 to us to find out whether a specific request code
+ * is supported by this implementation.
+ *
+ * Return 1 for "supported" and 0 for "unsupported"
+ */
+static int
+onSupports_func0(int requestCode)
+{
+    return onSupports(REF_RIL_FIRST_INSTANCE_ID, requestCode);
+}
+
+/**
+ * Call from RIL instance 1 to us to find out whether a specific request code
+ * is supported by this implementation.
+ *
+ * Return 1 for "supported" and 0 for "unsupported"
+ */
+static int
+onSupports_func1(int requestCode)
+{
+    return onSupports(REF_RIL_SECOND_INSTANCE_ID, requestCode);
+}
+
+
+static void onCancel (int instance, RIL_Token t)
 {
     //@@@todo
 
 }
 
-static const char * getVersion(void)
+/**
+ * Call from RIL instance 2 for onCancel
+ */
+static void onCancel_func0 (RIL_Token t)
+{
+    onCancel(REF_RIL_FIRST_INSTANCE_ID, t);
+}
+
+/**
+ * Call from RIL instance 1 for onCancel
+ */
+static void onCancel_func1 (RIL_Token t)
+{
+    onCancel(REF_RIL_SECOND_INSTANCE_ID, t);
+}
+
+static const char * getVersion(int inst_id)
 {
     return "android reference-ril 1.0";
 }
 
-static void
-setRadioState(RIL_RadioState newState)
+/**
+ * Call from RIL instance 0 for getVersion
+ */
+static const char * getVersion_func0(void)
 {
+    return getVersion(REF_RIL_FIRST_INSTANCE_ID);
+}
+
+/**
+ * Call from RIL instance 1 for getVersion
+ */
+static const char * getVersion_func1(void)
+{
+    return getVersion(REF_RIL_SECOND_INSTANCE_ID);
+}
+
+/*static void
+setRadioTechnology(int inst_id, ModemInfo *mdm, int newtech)
+{
+    ALOGD("setRadioTechnology(%d, %d)", inst_id, newtech);
+
+    int oldtech = TECH(mdm);
+
+    if (newtech != oldtech) {
+        ALOGD("Tech change (%d => %d)", oldtech, newtech);
+        TECH(mdm) = newtech;
+        if (techFamilyFromModemType(newtech) != techFamilyFromModemType(oldtech)) {
+            RIL_onUnsolicitedResponse(inst_id, RIL_UNSOL_VOICE_RADIO_TECH_CHANGED, NULL, 0);
+        }
+    }
+}
+*/
+
+static void
+setRadioState (int inst_id, RIL_RadioState newState)
+{
+    ALOGD("setRadioState (%d, %d)", inst_id, newState);
     RIL_RadioState oldState;
 
     pthread_mutex_lock(&s_state_mutex);
 
-    oldState = sState;
+    oldState = sState[inst_id];
 
     if (s_closed > 0) {
         // If we're closed, the only reasonable state is
@@ -1608,9 +2016,8 @@ setRadioState(RIL_RadioState newState)
         newState = RADIO_STATE_UNAVAILABLE;
     }
 
-    if (sState != newState || s_closed > 0) {
-        sState = newState;
-
+    if (sState[inst_id] != newState || s_closed > 0) {
+        sState[inst_id] = newState;
         pthread_cond_broadcast (&s_state_cond);
     }
 
@@ -1618,26 +2025,28 @@ setRadioState(RIL_RadioState newState)
 
 
     /* do these outside of the mutex */
-    if (sState != oldState) {
-        RIL_onUnsolicitedResponse (RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED,
+    if (sState[inst_id] != oldState) {
+        RIL_onUnsolicitedResponse (inst_id, RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED,
                                     NULL, 0);
 
+         //TODO: suresh check this is proper ?
         /* FIXME onSimReady() and onRadioPowerOn() cannot be called
          * from the AT reader thread
          * Currently, this doesn't happen, but if that changes then these
          * will need to be dispatched on the request thread
          */
-        if (sState == RADIO_STATE_SIM_READY) {
-            onSIMReady();
-        } else if (sState == RADIO_STATE_SIM_NOT_READY) {
-            onRadioPowerOn();
+     //   if (sState[inst_id] == RADIO_STATE_SIM_READY) {
+     //       onSIMReady();
+     //   } else
+        if (sState[inst_id] == RADIO_STATE_ON) {
+            onRadioPowerOn(inst_id);
         }
     }
 }
 
 /** Returns SIM_NOT_READY on error */
 static SIM_Status
-getSIMStatus()
+getSIMStatus(int inst_id)
 {
     ATResponse *p_response = NULL;
     int err;
@@ -1645,7 +2054,8 @@ getSIMStatus()
     char *cpinLine;
     char *cpinResult;
 
-    if (sState == RADIO_STATE_OFF || sState == RADIO_STATE_UNAVAILABLE) {
+    ALOGD("getSIMStatus(). sState[%d]: %d",inst_id, sState[inst_id]);
+    if (sState[inst_id] == RADIO_STATE_OFF || sState[inst_id] == RADIO_STATE_UNAVAILABLE) {
         ret = SIM_NOT_READY;
         goto done;
     }
@@ -1719,7 +2129,7 @@ done:
  * This must be freed using freeCardStatus.
  * @return: On success returns RIL_E_SUCCESS
  */
-static int getCardStatus(RIL_CardStatus_v6 **pp_card_status) {
+static int getCardStatus(int inst_id, RIL_CardStatus_v6 **pp_card_status) {
     static RIL_AppStatus app_status_array[] = {
         // SIM_ABSENT = 0
         { RIL_APPTYPE_UNKNOWN, RIL_APPSTATE_UNKNOWN, RIL_PERSOSUBSTATE_UNKNOWN,
@@ -1738,17 +2148,40 @@ static int getCardStatus(RIL_CardStatus_v6 **pp_card_status) {
           NULL, NULL, 0, RIL_PINSTATE_ENABLED_BLOCKED, RIL_PINSTATE_UNKNOWN },
         // SIM_NETWORK_PERSONALIZATION = 5
         { RIL_APPTYPE_SIM, RIL_APPSTATE_SUBSCRIPTION_PERSO, RIL_PERSOSUBSTATE_SIM_NETWORK,
-          NULL, NULL, 0, RIL_PINSTATE_ENABLED_NOT_VERIFIED, RIL_PINSTATE_UNKNOWN }
+          NULL, NULL, 0, RIL_PINSTATE_ENABLED_NOT_VERIFIED, RIL_PINSTATE_UNKNOWN },
+        // RUIM_ABSENT = 6
+        { RIL_APPTYPE_UNKNOWN, RIL_APPSTATE_UNKNOWN, RIL_PERSOSUBSTATE_UNKNOWN,
+          NULL, NULL, 0, RIL_PINSTATE_UNKNOWN, RIL_PINSTATE_UNKNOWN },
+        // RUIM_NOT_READY = 7
+        { RIL_APPTYPE_RUIM, RIL_APPSTATE_DETECTED, RIL_PERSOSUBSTATE_UNKNOWN,
+          NULL, NULL, 0, RIL_PINSTATE_UNKNOWN, RIL_PINSTATE_UNKNOWN },
+        // RUIM_READY = 8
+        { RIL_APPTYPE_RUIM, RIL_APPSTATE_READY, RIL_PERSOSUBSTATE_READY,
+          NULL, NULL, 0, RIL_PINSTATE_UNKNOWN, RIL_PINSTATE_UNKNOWN },
+        // RUIM_PIN = 9
+        { RIL_APPTYPE_RUIM, RIL_APPSTATE_PIN, RIL_PERSOSUBSTATE_UNKNOWN,
+          NULL, NULL, 0, RIL_PINSTATE_ENABLED_NOT_VERIFIED, RIL_PINSTATE_UNKNOWN },
+        // RUIM_PUK = 10
+        { RIL_APPTYPE_RUIM, RIL_APPSTATE_PUK, RIL_PERSOSUBSTATE_UNKNOWN,
+          NULL, NULL, 0, RIL_PINSTATE_ENABLED_BLOCKED, RIL_PINSTATE_UNKNOWN },
+        // RUIM_NETWORK_PERSONALIZATION = 11
+        { RIL_APPTYPE_RUIM, RIL_APPSTATE_SUBSCRIPTION_PERSO, RIL_PERSOSUBSTATE_SIM_NETWORK,
+           NULL, NULL, 0, RIL_PINSTATE_ENABLED_NOT_VERIFIED, RIL_PINSTATE_UNKNOWN }
     };
     RIL_CardState card_state;
     int num_apps;
 
-    int sim_status = getSIMStatus();
+    int sim_status = getSIMStatus(inst_id);
+
     if (sim_status == SIM_ABSENT) {
         card_state = RIL_CARDSTATE_ABSENT;
         num_apps = 0;
     } else {
         card_state = RIL_CARDSTATE_PRESENT;
+        // Only one app here. get sim status for app index : 0.
+        if (isAppReady(inst_id, 0) == 0) {
+            sim_status = SIM_NOT_READY;
+        }
         num_apps = 1;
     }
 
@@ -1772,6 +2205,7 @@ static int getCardStatus(RIL_CardStatus_v6 **pp_card_status) {
     if (num_apps != 0) {
         // Only support one app, gsm
         p_card_status->num_applications = 1;
+//        TODO: Multiple application support
         p_card_status->gsm_umts_subscription_app_index = 0;
 
         // Get the correct app status
@@ -1799,27 +2233,28 @@ static void pollSIMState (void *param)
 {
     ATResponse *p_response;
     int ret;
+    int inst_id = (int)param;
 
-    if (sState != RADIO_STATE_SIM_NOT_READY) {
+    if (sState[inst_id] != RADIO_STATE_SIM_NOT_READY) {
         // no longer valid to poll
         return;
     }
 
-    switch(getSIMStatus()) {
+    switch(getSIMStatus(inst_id)) {
         case SIM_ABSENT:
         case SIM_PIN:
         case SIM_PUK:
         case SIM_NETWORK_PERSONALIZATION:
         default:
-            setRadioState(RADIO_STATE_SIM_LOCKED_OR_ABSENT);
+            setRadioState(inst_id, RADIO_STATE_SIM_LOCKED_OR_ABSENT);
         return;
 
         case SIM_NOT_READY:
-            RIL_requestTimedCallback (pollSIMState, NULL, &TIMEVAL_SIMPOLL);
+            RIL_requestTimedCallback (inst_id, pollSIMState, NULL, &TIMEVAL_SIMPOLL);
         return;
 
         case SIM_READY:
-            setRadioState(RADIO_STATE_SIM_READY);
+            setRadioState(inst_id, RADIO_STATE_SIM_READY);
         return;
     }
 }
@@ -1866,7 +2301,11 @@ static void initializeCallback(void *param)
     ATResponse *p_response = NULL;
     int err;
 
-    setRadioState (RADIO_STATE_OFF);
+    int inst_id = (int)param;
+
+    ALOGD("initializeCallback(%d)", inst_id);
+
+    setRadioState (inst_id, RADIO_STATE_OFF);
 
     at_handshake();
 
@@ -1935,7 +2374,7 @@ static void initializeCallback(void *param)
 
     /* assume radio is off on error */
     if (isRadioOn() > 0) {
-        setRadioState (RADIO_STATE_SIM_NOT_READY);
+        setRadioState (inst_id, RADIO_STATE_ON);
     }
 }
 
@@ -1957,13 +2396,14 @@ static void waitForClose()
  */
 static void onUnsolicited (const char *s, const char *sms_pdu)
 {
-    char *line = NULL;
+    char *line = NULL, *p;
     int err;
+    int inst_id = REF_RIL_FIRST_INSTANCE_ID;
 
     /* Ignore unsolicited responses until we're initialized.
      * This is OK because the RIL library will poll for initial state
      */
-    if (sState == RADIO_STATE_UNAVAILABLE) {
+    if (sState[inst_id] == RADIO_STATE_UNAVAILABLE) {
         return;
     }
 
@@ -1971,15 +2411,17 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
         /* TI specific -- NITZ time */
         char *response;
 
-        line = strdup(s);
-        at_tok_start(&line);
+        line = p = strdup(s);
+        at_tok_start(&p);
 
-        err = at_tok_nextstr(&line, &response);
+        err = at_tok_nextstr(&p, &response);
 
+        free(line);
         if (err != 0) {
             ALOGE("invalid NITZ line %s\n", s);
         } else {
             RIL_onUnsolicitedResponse (
+                inst_id,
                 RIL_UNSOL_NITZ_TIME_RECEIVED,
                 response, strlen(response));
         }
@@ -1988,27 +2430,59 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
                 || strStartsWith(s,"NO CARRIER")
                 || strStartsWith(s,"+CCWA")
     ) {
-        RIL_onUnsolicitedResponse (
-            RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED,
-            NULL, 0);
+        // Workarround for simulating the incomming call on instance 1 and 2
+        // Alternate unsol call state changed will be sent to each instances.
+        if (!mo_call) {
+            if (isMultiSimEnabled()) {
+                if (strStartsWith(s,"RING")) {
+                    mt_ring_counter++;
+                    if (mt_ring_counter % 2 == 0) {
+                        inst_id = REF_RIL_FIRST_INSTANCE_ID;
+                    } else {
+                        inst_id = REF_RIL_SECOND_INSTANCE_ID;
+                    }
+                    ALOGE("Incoming Ring. Sending UNSOL_RESPONSE_CALL_STATE_CHANGED on %d", inst_id);
+                }
+            }
+
+            RIL_onUnsolicitedResponse (
+                    inst_id,
+                    RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED,
+                    NULL, 0);
+        }
 #ifdef WORKAROUND_FAKE_CGEV
-        RIL_requestTimedCallback (onDataCallListChanged, NULL, NULL); //TODO use new function
+        RIL_requestTimedCallback (inst_id, onDataCallListChanged, (void *)inst_id, NULL); //TODO use new function
 #endif /* WORKAROUND_FAKE_CGEV */
     } else if (strStartsWith(s,"+CREG:")
                 || strStartsWith(s,"+CGREG:")
     ) {
         RIL_onUnsolicitedResponse (
+            inst_id,
             RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED,
             NULL, 0);
 #ifdef WORKAROUND_FAKE_CGEV
-        RIL_requestTimedCallback (onDataCallListChanged, NULL, NULL);
+        RIL_requestTimedCallback (inst_id, onDataCallListChanged, NULL, NULL);
 #endif /* WORKAROUND_FAKE_CGEV */
     } else if (strStartsWith(s, "+CMT:")) {
+        // Workarround to simulate the incomming SMS on instance 1 and 2
+        // Alternate unsol new sms will be sent to each of the instances.
+        if (isMultiSimEnabled()) {
+            if (line_sms == 0) {
+                inst_id = REF_RIL_FIRST_INSTANCE_ID;
+                line_sms = 1;
+            } else {
+                inst_id = REF_RIL_SECOND_INSTANCE_ID;
+                line_sms = 0;
+            }
+        }
+
         RIL_onUnsolicitedResponse (
+            inst_id,
             RIL_UNSOL_RESPONSE_NEW_SMS,
             sms_pdu, strlen(sms_pdu));
     } else if (strStartsWith(s, "+CDS:")) {
         RIL_onUnsolicitedResponse (
+            inst_id,
             RIL_UNSOL_RESPONSE_NEW_SMS_STATUS_REPORT,
             sms_pdu, strlen(sms_pdu));
     } else if (strStartsWith(s, "+CGEV:")) {
@@ -2017,10 +2491,10 @@ static void onUnsolicited (const char *s, const char *sms_pdu)
          * RIL_UNSOL_DATA_CALL_LIST_CHANGED calls are tolerated
          */
         /* can't issue AT commands here -- call on main thread */
-        RIL_requestTimedCallback (onDataCallListChanged, NULL, NULL);
+        RIL_requestTimedCallback (inst_id, onDataCallListChanged, (void *)inst_id, NULL);
 #ifdef WORKAROUND_FAKE_CGEV
     } else if (strStartsWith(s, "+CME ERROR: 150")) {
-        RIL_requestTimedCallback (onDataCallListChanged, NULL, NULL);
+        RIL_requestTimedCallback (inst_id, onDataCallListChanged, (void *)inst_id, NULL);
 #endif /* WORKAROUND_FAKE_CGEV */
     }
 }
@@ -2032,7 +2506,10 @@ static void onATReaderClosed()
     at_close();
     s_closed = 1;
 
-    setRadioState (RADIO_STATE_UNAVAILABLE);
+    setRadioState (REF_RIL_FIRST_INSTANCE_ID, RADIO_STATE_UNAVAILABLE);
+    if (isMultiSimEnabled()) {
+        setRadioState (REF_RIL_SECOND_INSTANCE_ID, RADIO_STATE_UNAVAILABLE);
+    }
 }
 
 /* Called on command thread */
@@ -2045,7 +2522,10 @@ static void onATTimeout()
 
     /* FIXME cause a radio reset here */
 
-    setRadioState (RADIO_STATE_UNAVAILABLE);
+    setRadioState (REF_RIL_FIRST_INSTANCE_ID, RADIO_STATE_UNAVAILABLE);
+    if (isMultiSimEnabled()) {
+        setRadioState (REF_RIL_SECOND_INSTANCE_ID, RADIO_STATE_UNAVAILABLE);
+    }
 }
 
 static void usage(char *s)
@@ -2058,17 +2538,37 @@ static void usage(char *s)
 #endif
 }
 
+static int isMultiSimEnabled()
+{
+    int enabled = 1;
+    char prop_val[PROPERTY_VALUE_MAX];
+    if (property_get("persist.multisim.config", prop_val, "0") > 0)
+    {
+        if ((strncmp(prop_val, "dsds", 4) == 0) || (strncmp(prop_val, "dsda", 4) == 0)) {
+            enabled = 1;
+        }
+    }
+    ALOGD("REF_RIL: isMultiSimEnabled: prop_val = %s enabled = %d", prop_val, enabled);
+    return enabled;
+}
+
 static void *
 mainLoop(void *param)
 {
     int fd;
     int ret;
 
+    int inst_id = (int)param;
+
+    ALOGD("mainLoop(%d)", inst_id);
+
     AT_DUMP("== ", "entering mainLoop()", -1 );
     at_set_on_reader_closed(onATReaderClosed);
     at_set_on_timeout(onATTimeout);
 
     for (;;) {
+        // Open the socket and initialize the at channel only once.
+        if (inst_id == REF_RIL_FIRST_INSTANCE_ID) {
         fd = -1;
         while  (fd < 0) {
             if (s_port > 0) {
@@ -2127,8 +2627,9 @@ mainLoop(void *param)
             ALOGE ("AT error %d on at_open\n", ret);
             return 0;
         }
+        }
 
-        RIL_requestTimedCallback(initializeCallback, NULL, &TIMEVAL_0);
+        RIL_requestTimedCallback(inst_id, initializeCallback, (void *)inst_id, &TIMEVAL_0);
 
         // Give initializeCallback a chance to dispatched, since
         // we don't presently have a cancellation mechanism
@@ -2141,7 +2642,8 @@ mainLoop(void *param)
 
 #ifdef RIL_SHLIB
 
-pthread_t s_tid_mainloop;
+pthread_t s_tid_mainloop_0;
+pthread_t s_tid_mainloop_1;
 
 const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **argv)
 {
@@ -2149,8 +2651,9 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
     int fd = -1;
     int opt;
     pthread_attr_t attr;
+    int inst_id = REF_RIL_FIRST_INSTANCE_ID;
 
-    s_rilenv = env;
+    optind = 1;
 
     while ( -1 != (opt = getopt(argc, argv, "p:d:s:c:"))) {
         switch (opt) {
@@ -2175,7 +2678,8 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
             break;
 
             case 'c':
-                //TODO:This will be handled when DSDS two rild emualtor support is mainlined.
+                inst_id = atoi(optarg);
+                ALOGI("instance Id : %d", inst_id);
             break;
 
             default:
@@ -2184,6 +2688,9 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
         }
     }
 
+    s_rilenv[inst_id] = env;
+    ALOGD("RIL_Init : inst_id = %d", inst_id);
+
     if (s_port < 0 && s_device_path == NULL) {
         usage(argv[0]);
         return NULL;
@@ -2191,9 +2698,15 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
 
     pthread_attr_init (&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
-    ret = pthread_create(&s_tid_mainloop, &attr, mainLoop, NULL);
 
-    return &s_callbacks;
+    // Create mainLoop thread for instance 1 or 2.
+    if (inst_id == REF_RIL_FIRST_INSTANCE_ID) {
+        ret = pthread_create(&s_tid_mainloop_0, &attr, mainLoop, (void *)inst_id);
+    } else {
+        ret = pthread_create(&s_tid_mainloop_1, &attr, mainLoop, (void *)inst_id);
+    }
+
+    return &s_callbacks[inst_id];
 }
 #else /* RIL_SHLIB */
 int main (int argc, char **argv)
