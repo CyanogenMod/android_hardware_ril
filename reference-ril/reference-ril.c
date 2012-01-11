@@ -324,7 +324,9 @@ static void requestOrSendDataCallList(RIL_Token *t)
     int i;
     for (i = 0; i < n; i++) {
         responses[i].status = -1;
+#ifndef HCRADIO
         responses[i].suggestedRetryTime = -1;
+#endif
         responses[i].cid = -1;
         responses[i].active = -1;
         responses[i].type = "";
