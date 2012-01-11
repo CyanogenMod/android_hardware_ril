@@ -21,6 +21,11 @@ LOCAL_MODULE:= libril
 
 LOCAL_LDLIBS += -lpthread
 
+#USE HCRADIO
+ifeq ($(BOARD_USES_HC_RADIO),true)
+LOCAL_CFLAGS += -DHCRADIO
+endif
+
 include $(BUILD_SHARED_LIBRARY)
 
 

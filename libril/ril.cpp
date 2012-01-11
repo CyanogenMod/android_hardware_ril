@@ -1627,7 +1627,9 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
         int i;
         for (i = 0; i < num; i++) {
             p.writeInt32((int)p_cur[i].status);
+#ifndef HCRADIO
             p.writeInt32(p_cur[i].suggestedRetryTime);
+#endif
             p.writeInt32(p_cur[i].cid);
             p.writeInt32(p_cur[i].active);
             writeStringToParcel(p, p_cur[i].type);
