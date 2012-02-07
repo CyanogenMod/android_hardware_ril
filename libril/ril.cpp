@@ -1,7 +1,9 @@
 /* //device/libs/telephony/ril.cpp
 **
 ** Copyright 2006, The Android Open Source Project
-** Copyright (c) 2012, The Linux Foundation. All rights reserved.
+** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+**
+** Not a Contribution
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -144,7 +146,8 @@ typedef struct UserCallbackInfo {
     struct UserCallbackInfo *p_next;
 } UserCallbackInfo;
 
-
+extern "C"
+char rild[MAX_SOCKET_NAME_LENGTH] = SOCKET_NAME_RIL;
 /*******************************************************************/
 
 RIL_RadioFunctions s_callbacks = {0, NULL, NULL, NULL, NULL, NULL};
@@ -216,6 +219,7 @@ static void dispatchCdmaSmsAck(Parcel &p, RequestInfo *pRI);
 static void dispatchGsmBrSmsCnf(Parcel &p, RequestInfo *pRI);
 static void dispatchCdmaBrSmsCnf(Parcel &p, RequestInfo *pRI);
 static void dispatchRilCdmaSmsWriteArgs(Parcel &p, RequestInfo *pRI);
+static void dispatchUiccSubscripton(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
 static int responseString(Parcel &p, void *response, size_t responselen);
@@ -242,6 +246,7 @@ static int responseSimRefresh(Parcel &p, void *response, size_t responselen);
 static int responseCellInfoList(Parcel &p, void *response, size_t responselen);
 static int responseGetDataCallProfile(Parcel &p, void *response, size_t responselen);
 static int responseSSData(Parcel &p, void *response, size_t responselen);
+static int responseUiccSubscription(Parcel &p, void *response,size_t responselen);
 
 static int decodeVoiceRadioTechnology (RIL_RadioState radioState);
 static int decodeCdmaSubscriptionSource (RIL_RadioState radioState);
@@ -290,6 +295,15 @@ int cdmaSubscriptionSource = -1;
    check to see if SIM/RUIM status changed and notify telephony
  */
 int simRuimStatus = -1;
+
+static char * RIL_getRilSocketName() {
+    return rild;
+}
+
+extern "C"
+void RIL_setRilSocketName(char * s) {
+    strncat(rild, s, MAX_SOCKET_NAME_LENGTH);
+}
 
 static char *
 strdupReadString(Parcel &p) {
@@ -1518,6 +1532,56 @@ invalid:
     return;
 }
 
+static void dispatchUiccSubscripton(Parcel &p, RequestInfo *pRI) {
+    RIL_SelectUiccSub uicc_sub;
+    status_t status;
+    int32_t  t;
+    memset(&uicc_sub, 0, sizeof(uicc_sub));
+
+    status = p.readInt32(&t);
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+    uicc_sub.slot = (int) t;
+
+    status = p.readInt32(&t);
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+    uicc_sub.app_index = (int) t;
+
+    status = p.readInt32(&t);
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+    uicc_sub.sub_type = (RIL_SubscriptionType) t;
+
+    status = p.readInt32(&t);
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+    uicc_sub.act_status = (RIL_UiccSubActStatus) t;
+
+    startRequest;
+    appendPrintBuf("slot=%d, app_index=%d, act_status = %d", uicc_sub.slot, uicc_sub.app_index,
+            uicc_sub.act_status);
+    RLOGD("dispatchUiccSubscription, slot=%d, app_index=%d, act_status = %d", uicc_sub.slot,
+            uicc_sub.app_index, uicc_sub.act_status);
+    closeRequest;
+    printRequest(pRI->token, pRI->pCI->requestNumber);
+
+    s_callbacks.onRequest(pRI->pCI->requestNumber, &uicc_sub, sizeof(uicc_sub), pRI);
+
+#ifdef MEMSET_FREED
+    memset(&uicc_sub, 0, sizeof(uicc_sub));
+#endif
+    return;
+
+invalid:
+    invalidCommandBlock(pRI);
+    return;
+}
+
 static int
 blockingWrite(int fd, const void *buffer, size_t len) {
     size_t writeOffset = 0;
@@ -2620,6 +2684,23 @@ static bool isServiceTypeCFQuery(RIL_SsServiceType serType, RIL_SsRequestType re
     return false;
 }
 
+
+static int responseUiccSubscription(Parcel &p,
+        void *response,size_t responselen) {
+
+    RLOGD("In responseUiccSubscription");
+    startResponse;
+
+    RIL_SelectUiccSub *p_cur = (RIL_SelectUiccSub *)response;
+    p.writeInt32(p_cur->slot);
+    p.writeInt32(p_cur->app_index);
+    p.writeInt32(p_cur->sub_type);
+    p.writeInt32(p_cur->act_status);
+
+    closeResponse;
+    return 0;
+}
+
 static void triggerEvLoop() {
     int ret;
     if (!pthread_equal(pthread_self(), s_tid_dispatch)) {
@@ -2983,7 +3064,7 @@ static void listenCallback (int fd, short flags, void *param) {
         RLOGE("Error on accept() errno:%d", errno);
         /* start listening for new connections again */
         rilEventAddWakeup(&s_listen_event);
-	      return;
+        return;
     }
 
     /* check the credential of the other side and only accept socket from
@@ -3328,9 +3409,9 @@ RIL_register (const RIL_RadioFunctions *callbacks) {
     s_fdListen = ret;
 
 #else
-    s_fdListen = android_get_control_socket(SOCKET_NAME_RIL);
+    s_fdListen = android_get_control_socket(RIL_getRilSocketName());
     if (s_fdListen < 0) {
-        RLOGE("Failed to get socket '" SOCKET_NAME_RIL "'");
+        RLOGE("Failed to get socket %s",RIL_getRilSocketName());
         exit(-1);
     }
 
@@ -3353,9 +3434,20 @@ RIL_register (const RIL_RadioFunctions *callbacks) {
 #if 1
     // start debug interface socket
 
-    s_fdDebug = android_get_control_socket(SOCKET_NAME_RIL_DEBUG);
+    char *str= NULL;
+
+    char *socket = RIL_getRilSocketName();
+
+    if (strlen(socket) >= strlen(SOCKET_NAME_RIL)) {
+        str = socket + strlen(SOCKET_NAME_RIL);
+    }
+
+    char rildebug[MAX_DEBUG_SOCKET_NAME_LENGTH] = SOCKET_NAME_RIL_DEBUG;
+    strncat(rildebug, str, MAX_DEBUG_SOCKET_NAME_LENGTH);
+
+    s_fdDebug = android_get_control_socket(rildebug);
     if (s_fdDebug < 0) {
-        RLOGE("Failed to get socket '" SOCKET_NAME_RIL_DEBUG "' errno:%d", errno);
+        RLOGE("Failed to get socket : %s errno:%d", rildebug, errno);
         exit(-1);
     }
 
@@ -3944,6 +4036,10 @@ requestToString(int request) {
         case RIL_REQUEST_IMS_REGISTRATION_STATE: return "IMS_REGISTRATION_STATE";
         case RIL_REQUEST_IMS_SEND_SMS: return "IMS_SEND_SMS";
         case RIL_REQUEST_GET_DATA_CALL_PROFILE: return "GET_DATA_CALL_PROFILE";
+        case RIL_REQUEST_SET_UICC_SUBSCRIPTION: return "REQUEST_SET_UICC_SUBSCRIPTION";
+        case RIL_REQUEST_SET_DATA_SUBSCRIPTION: return "REQUEST_SET_DATA_SUBSCRIPTION";
+        case RIL_REQUEST_GET_UICC_SUBSCRIPTION: return "REQUEST_GET_UICC_SUBSCRIPTION";
+        case RIL_REQUEST_GET_DATA_SUBSCRIPTION: return "REQUEST_GET_DATA_SUBSCRIPTION";
         case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: return "UNSOL_RESPONSE_RADIO_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED: return "UNSOL_RESPONSE_CALL_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED: return "UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED";
@@ -3983,6 +4079,7 @@ requestToString(int request) {
         case RIL_UNSOL_CELL_INFO_LIST: return "UNSOL_CELL_INFO_LIST";
         case RIL_UNSOL_RESPONSE_IMS_NETWORK_STATE_CHANGED: return "RESPONSE_IMS_NETWORK_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_TETHERED_MODE_STATE_CHANGED: return "RIL_UNSOL_RESPONSE_TETHERED_MODE_STATE_CHANGED";
+        case RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED: return "UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED";
         default: return "<unknown request>";
     }
 }

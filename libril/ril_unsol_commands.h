@@ -1,7 +1,9 @@
 /* //device/libs/telephony/ril_unsol_commands.h
 **
 ** Copyright 2006, The Android Open Source Project
-** Copyright (c) 2012, The Linux Foundation. All rights reserved.
+** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+**
+** Not a Contribution
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -56,3 +58,4 @@
     {RIL_UNSOL_RESPONSE_TETHERED_MODE_STATE_CHANGED, responseInts, WAKE_PARTIAL},
     {RIL_UNSOL_ON_SS, responseSSData, WAKE_PARTIAL},
     {RIL_UNSOL_STK_CC_ALPHA_NOTIFY, responseString, WAKE_PARTIAL},
+    {RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED, responseInts, WAKE_PARTIAL},

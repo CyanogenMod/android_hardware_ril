@@ -1,6 +1,8 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
- * Copyright (c) 2012, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+ *
+ * Not a Contribution
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +23,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <telephony/ril_cdma_sms.h>
+#include <telephony/ril_msim.h>
 #ifndef FEATURE_UNIT_TEST
 #include <sys/time.h>
 #endif /* !FEATURE_UNIT_TEST */
@@ -3712,6 +3715,77 @@ typedef struct {
  */
 #define RIL_REQUEST_GET_DATA_CALL_PROFILE 113
 
+/**
+ * RIL_REQUEST_SET_UICC_SUBSCRIPTION
+ *
+ * Selects/deselects a particular application/subscription to use on a particular SIM card
+ * "data" is const  RIL_SelectUiccSub*
+ *
+ * "response" is NULL
+ *
+ *  Valid errors:
+ *  SUCCESS
+ *  RADIO_NOT_AVAILABLE (radio resetting)
+ *  GENERIC_FAILURE
+ *  SUBSCRIPTION_NOT_SUPPORTED
+ *
+ */
+#define RIL_REQUEST_SET_UICC_SUBSCRIPTION  114
+
+/**
+ *  RIL_REQUEST_SET_DATA_SUBSCRIPTION
+ *
+ *  Selects a subscription for data call setup
+ * "data" is NULL
+ *
+ * "response" is NULL
+ *
+ *  Valid errors:
+ *
+ *  SUCCESS
+ *  RADIO_NOT_AVAILABLE (radio resetting)
+ *  GENERIC_FAILURE
+ *
+ */
+#define RIL_REQUEST_SET_DATA_SUBSCRIPTION  115
+
+/**
+ * RIL_REQUEST_GET_UICC_SUBSCRIPTION
+ *
+ * Request to query the UICC subscription info
+ * that is currently set.
+ *
+ * "data" is NULL
+ *
+ * "response" is const RIL_SelectUiccSub *
+ *
+ * Valid errors:
+ *  SUCCESS
+ *  RADIO_NOT_AVAILABLE
+ *  GENERIC_FAILURE
+ *
+ */
+#define RIL_REQUEST_GET_UICC_SUBSCRIPTION 116
+
+/**
+ * RIL_REQUEST_GET_DATA_SUBSCRIPTION
+ *
+ * Request to query the Data subscription info
+ * that is currently set.
+ *
+ * "data" is NULL
+ *
+ * "response" is int *
+ * ((int *)data)[0] is == 0  Indicates data is active on subscription 0
+ * ((int *)data)[0] is == 1  Indicates data is active on subscription 1
+ *
+ * Valid errors:
+ *  SUCCESS
+ *  RADIO_NOT_AVAILABLE
+ *  GENERIC_FAILURE
+ *
+ */
+#define RIL_REQUEST_GET_DATA_SUBSCRIPTION 117
 
 /***********************************************************************/
 
@@ -4247,6 +4321,21 @@ typedef struct {
  *
  */
 #define RIL_UNSOL_STK_CC_ALPHA_NOTIFY 1040
+
+/**
+ * RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED
+ *
+ * Called when there is a change in subscription status.
+ * This event will be sent in the following scenarios
+ *  - subscription readiness at modem, which was selected by telephony layer
+ *  - when subscription is deactivated by modem due to UICC card removal
+ *
+ * "data" is const int *
+ * ((const int *)data)[0] == 0 for Subscription Deactivated
+ * ((const int *)data)[0] == 1 for Subscription Activated
+ *
+ */
+#define RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED 1041
 
 /***********************************************************************/
 
