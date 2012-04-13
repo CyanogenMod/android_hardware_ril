@@ -2400,12 +2400,12 @@ static void debugCallback (int fd, short flags, void *param) {
             break;
         case 3:
             LOGI ("Debug port: QXDM log enable.");
-            qxdm_data[0] = 65536;
-            qxdm_data[1] = 16;
-            qxdm_data[2] = 1;
-            qxdm_data[3] = 32;
-            qxdm_data[4] = 0;
-            qxdm_data[4] = 8;
+            qxdm_data[0] = 65536;     // head.func_tag
+            qxdm_data[1] = 16;        // head.len
+            qxdm_data[2] = 1;         // mode: 1 for 'start logging'
+            qxdm_data[3] = 32;        // log_file_size: 32megabytes
+            qxdm_data[4] = 0;         // log_mask
+            qxdm_data[5] = 8;         // log_max_fileindex
             issueLocalRequest(RIL_REQUEST_OEM_HOOK_RAW, qxdm_data,
                               6 * sizeof(int));
             break;
@@ -2413,10 +2413,10 @@ static void debugCallback (int fd, short flags, void *param) {
             LOGI ("Debug port: QXDM log disable.");
             qxdm_data[0] = 65536;
             qxdm_data[1] = 16;
-            qxdm_data[2] = 0;
+            qxdm_data[2] = 0;          // mode: 0 for 'stop logging'
             qxdm_data[3] = 32;
             qxdm_data[4] = 0;
-            qxdm_data[4] = 8;
+            qxdm_data[5] = 8;
             issueLocalRequest(RIL_REQUEST_OEM_HOOK_RAW, qxdm_data,
                               6 * sizeof(int));
             break;
@@ -3089,6 +3089,7 @@ requestToString(int request) {
         case RIL_REQUEST_GET_SMSC_ADDRESS: return "GET_SMSC_ADDRESS";
         case RIL_REQUEST_SET_SMSC_ADDRESS: return "SET_SMSC_ADDRESS";
         case RIL_REQUEST_REPORT_SMS_MEMORY_STATUS: return "REPORT_SMS_MEMORY_STATUS";
+        case RIL_REQUEST_REPORT_STK_SERVICE_IS_RUNNING: return "REPORT_STK_SERVICE_IS_RUNNING";
         case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: return "UNSOL_RESPONSE_RADIO_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED: return "UNSOL_RESPONSE_CALL_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_NETWORK_STATE_CHANGED: return "UNSOL_RESPONSE_NETWORK_STATE_CHANGED";

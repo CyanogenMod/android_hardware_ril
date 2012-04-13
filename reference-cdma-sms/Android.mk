@@ -18,4 +18,5 @@ LOCAL_SHARED_LIBRARIES += \
   libcutils libutils
 LOCAL_LDLIBS += -lpthread
 LOCAL_MODULE:= libreference-cdma-sms
+LOCAL_MODULE_TAGS := optional
 include $(BUILD_SHARED_LIBRARY)
