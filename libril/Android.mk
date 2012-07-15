@@ -1,5 +1,12 @@
 # Copyright 2006 The Android Open Source Project
 
+ifeq ($(BOARD_PROVIDES_LIBRIL),true)
+
+$(shell mkdir -p $(OUT)/obj/SHARED_LIBRARIES/libril_intermediates)
+$(shell touch $(OUT)/obj/SHARED_LIBRARIES/libril_intermediates/export_includes)
+
+endif # BOARD_PROVIDES_LIBRIL
+
 ifneq ($(BOARD_PROVIDES_LIBRIL),true)
 
 LOCAL_PATH:= $(call my-dir)
