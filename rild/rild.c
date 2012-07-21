@@ -85,6 +85,7 @@ static int make_argv(char * args, char ** argv)
  * Our group, cache, was set by init.
  */
 void switchUser() {
+#ifndef FORCE_RILD_AS_ROOT
     prctl(PR_SET_KEEPCAPS, 1, 0, 0, 0);
     setuid(AID_RADIO);
 
@@ -95,6 +96,7 @@ void switchUser() {
     cap.effective = cap.permitted = (1 << CAP_NET_ADMIN) | (1 << CAP_NET_RAW);
     cap.inheritable = 0;
     capset(&header, &cap);
+#endif
 }
 
 int main(int argc, char **argv)
