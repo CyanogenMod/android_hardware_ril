@@ -27,7 +27,11 @@ extern "C" {
 #endif
 
 #define RIL_VERSION 7     /* Current version */
+#ifdef LEGACY_RIL
+#define RIL_VERSION_MIN 2 /* Minimum RIL_VERSION supported */
+#else
 #define RIL_VERSION_MIN 6 /* Minimum RIL_VERSION supported */
+#endif
 
 #define CDMA_ALPHA_INFO_BUFFER_LENGTH 64
 #define CDMA_NUMBER_INFO_BUFFER_LENGTH 81

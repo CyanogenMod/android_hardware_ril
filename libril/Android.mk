@@ -29,6 +29,10 @@ ifeq ($(BOARD_USES_HC_RADIO),true)
 LOCAL_CFLAGS += -DHCRADIO
 endif
 
+ifeq ($(BOARD_USES_LEGACY_RIL),true)
+LOCAL_CFLAGS += -DLEGACY_RIL
+endif
+
 include $(BUILD_SHARED_LIBRARY)
 
 
