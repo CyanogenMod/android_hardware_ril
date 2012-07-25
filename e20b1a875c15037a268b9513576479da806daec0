@@ -1,0 +1,9 @@
+Change-Id: Ie20b1a875c15037a268b9513576479da806daec0
+Code-Review+2: Steve Kondik <shade@chemlab.org>
+Verified+1: Steve Kondik <shade@chemlab.org>
+Code-Review+1: mdeejay <mdjrussia@gmail.com>
+Submitted-by: Steve Kondik <shade@chemlab.org>
+Submitted-at: Wed, 25 Jul 2012 09:33:25 +0400
+Reviewed-on: http://review.cyanogenmod.com/19776
+Project: CyanogenMod/android_hardware_ril
+Branch: refs/heads/jellybean
