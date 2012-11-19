@@ -1019,49 +1019,51 @@ dispatchGsmBrSmsCnf(Parcel &p, RequestInfo *pRI) {
         goto invalid;
     }
 
-    RIL_GSM_BroadcastSmsConfigInfo gsmBci[num];
-    RIL_GSM_BroadcastSmsConfigInfo *gsmBciPtrs[num];
+    {
+        RIL_GSM_BroadcastSmsConfigInfo gsmBci[num];
+        RIL_GSM_BroadcastSmsConfigInfo *gsmBciPtrs[num];
 
-    startRequest;
-    for (int i = 0 ; i < num ; i++ ) {
-        gsmBciPtrs[i] = &gsmBci[i];
+        startRequest;
+        for (int i = 0 ; i < num ; i++ ) {
+            gsmBciPtrs[i] = &gsmBci[i];
 
-        status = p.readInt32(&t);
-        gsmBci[i].fromServiceId = (int) t;
+            status = p.readInt32(&t);
+            gsmBci[i].fromServiceId = (int) t;
 
-        status = p.readInt32(&t);
-        gsmBci[i].toServiceId = (int) t;
+            status = p.readInt32(&t);
+            gsmBci[i].toServiceId = (int) t;
 
-        status = p.readInt32(&t);
-        gsmBci[i].fromCodeScheme = (int) t;
+            status = p.readInt32(&t);
+            gsmBci[i].fromCodeScheme = (int) t;
 
-        status = p.readInt32(&t);
-        gsmBci[i].toCodeScheme = (int) t;
+            status = p.readInt32(&t);
+            gsmBci[i].toCodeScheme = (int) t;
 
-        status = p.readInt32(&t);
-        gsmBci[i].selected = (uint8_t) t;
+            status = p.readInt32(&t);
+            gsmBci[i].selected = (uint8_t) t;
 
-        appendPrintBuf("%s [%d: fromServiceId=%d, toServiceId =%d, \
-              fromCodeScheme=%d, toCodeScheme=%d, selected =%d]", printBuf, i,
-              gsmBci[i].fromServiceId, gsmBci[i].toServiceId,
-              gsmBci[i].fromCodeScheme, gsmBci[i].toCodeScheme,
-              gsmBci[i].selected);
-    }
-    closeRequest;
+            appendPrintBuf("%s [%d: fromServiceId=%d, toServiceId =%d, \
+                  fromCodeScheme=%d, toCodeScheme=%d, selected =%d]", printBuf, i,
+                  gsmBci[i].fromServiceId, gsmBci[i].toServiceId,
+                  gsmBci[i].fromCodeScheme, gsmBci[i].toCodeScheme,
+                  gsmBci[i].selected);
+        }
+        closeRequest;
 
-    if (status != NO_ERROR) {
-        goto invalid;
-    }
+        if (status != NO_ERROR) {
+            goto invalid;
+        }
 
-    s_callbacks.onRequest(pRI->pCI->requestNumber,
-                          gsmBciPtrs,
-                          num * sizeof(RIL_GSM_BroadcastSmsConfigInfo *),
-                          pRI);
+        s_callbacks.onRequest(pRI->pCI->requestNumber,
+                              gsmBciPtrs,
+                              num * sizeof(RIL_GSM_BroadcastSmsConfigInfo *),
+                              pRI);
 
 #ifdef MEMSET_FREED
-    memset(gsmBci, 0, num * sizeof(RIL_GSM_BroadcastSmsConfigInfo));
-    memset(gsmBciPtrs, 0, num * sizeof(RIL_GSM_BroadcastSmsConfigInfo *));
+        memset(gsmBci, 0, num * sizeof(RIL_GSM_BroadcastSmsConfigInfo));
+        memset(gsmBciPtrs, 0, num * sizeof(RIL_GSM_BroadcastSmsConfigInfo *));
 #endif
+    }
 
     return;
 
@@ -1081,41 +1083,43 @@ dispatchCdmaBrSmsCnf(Parcel &p, RequestInfo *pRI) {
         goto invalid;
     }
 
-    RIL_CDMA_BroadcastSmsConfigInfo cdmaBci[num];
-    RIL_CDMA_BroadcastSmsConfigInfo *cdmaBciPtrs[num];
+    {
+        RIL_CDMA_BroadcastSmsConfigInfo cdmaBci[num];
+        RIL_CDMA_BroadcastSmsConfigInfo *cdmaBciPtrs[num];
 
-    startRequest;
-    for (int i = 0 ; i < num ; i++ ) {
-        cdmaBciPtrs[i] = &cdmaBci[i];
+        startRequest;
+        for (int i = 0 ; i < num ; i++ ) {
+            cdmaBciPtrs[i] = &cdmaBci[i];
 
-        status = p.readInt32(&t);
-        cdmaBci[i].service_category = (int) t;
+            status = p.readInt32(&t);
+            cdmaBci[i].service_category = (int) t;
 
-        status = p.readInt32(&t);
-        cdmaBci[i].language = (int) t;
+            status = p.readInt32(&t);
+            cdmaBci[i].language = (int) t;
 
-        status = p.readInt32(&t);
-        cdmaBci[i].selected = (uint8_t) t;
+            status = p.readInt32(&t);
+            cdmaBci[i].selected = (uint8_t) t;
 
-        appendPrintBuf("%s [%d: service_category=%d, language =%d, \
-              entries.bSelected =%d]", printBuf, i, cdmaBci[i].service_category,
-              cdmaBci[i].language, cdmaBci[i].selected);
-    }
-    closeRequest;
+            appendPrintBuf("%s [%d: service_category=%d, language =%d, \
+                  entries.bSelected =%d]", printBuf, i, cdmaBci[i].service_category,
+                  cdmaBci[i].language, cdmaBci[i].selected);
+        }
+        closeRequest;
 
-    if (status != NO_ERROR) {
-        goto invalid;
-    }
+        if (status != NO_ERROR) {
+            goto invalid;
+        }
 
-    s_callbacks.onRequest(pRI->pCI->requestNumber,
-                          cdmaBciPtrs,
-                          num * sizeof(RIL_CDMA_BroadcastSmsConfigInfo *),
-                          pRI);
+        s_callbacks.onRequest(pRI->pCI->requestNumber,
+                              cdmaBciPtrs,
+                              num * sizeof(RIL_CDMA_BroadcastSmsConfigInfo *),
+                              pRI);
 
 #ifdef MEMSET_FREED
-    memset(cdmaBci, 0, num * sizeof(RIL_CDMA_BroadcastSmsConfigInfo));
-    memset(cdmaBciPtrs, 0, num * sizeof(RIL_CDMA_BroadcastSmsConfigInfo *));
+        memset(cdmaBci, 0, num * sizeof(RIL_CDMA_BroadcastSmsConfigInfo));
+        memset(cdmaBciPtrs, 0, num * sizeof(RIL_CDMA_BroadcastSmsConfigInfo *));
 #endif
+    }
 
     return;
 
@@ -1667,11 +1671,12 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
             writeStringToParcel(p, p_cur[i].addresses);
             writeStringToParcel(p, p_cur[i].dnses);
             writeStringToParcel(p, p_cur[i].gateways);
-            appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%d,%s,%s,%s],", printBuf,
+            appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s],", printBuf,
                 p_cur[i].status,
                 p_cur[i].suggestedRetryTime,
                 p_cur[i].cid,
                 (p_cur[i].active==0)?"down":"up",
+                (char*)p_cur[i].type,
                 (char*)p_cur[i].ifname,
                 (char*)p_cur[i].addresses,
                 (char*)p_cur[i].dnses,
@@ -2027,6 +2032,15 @@ static int responseRilSignalStrength(Parcel &p,
         p.writeInt32(p_cur->EVDO_SignalStrength.signalNoiseRatio);
         if (responselen >= sizeof (RIL_SignalStrength_v6)) {
             p.writeInt32(p_cur->LTE_SignalStrength.signalStrength);
+
+            /*
+             * ril version <=6 receives negative values for rsrp
+             * workaround for backward compatibility
+             */
+            p_cur->LTE_SignalStrength.rsrp =
+                    ((s_callbacks.version <= 6) && (p_cur->LTE_SignalStrength.rsrp < 0 )) ?
+                        -(p_cur->LTE_SignalStrength.rsrp) : p_cur->LTE_SignalStrength.rsrp;
+
             p.writeInt32(p_cur->LTE_SignalStrength.rsrp);
             p.writeInt32(p_cur->LTE_SignalStrength.rsrq);
             p.writeInt32(p_cur->LTE_SignalStrength.rssnr);
