@@ -37,6 +37,7 @@ ifeq (foo,foo)
       libcutils libutils
   LOCAL_LDLIBS += -lpthread
   LOCAL_CFLAGS += -DRIL_SHLIB
+  LOCAL_MODULE_TAGS := optional
   LOCAL_MODULE:= libreference-ril
   include $(BUILD_SHARED_LIBRARY)
 else
