@@ -3,9 +3,11 @@
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES:= \
-	rild.c
-
+ifneq ($(BOARD_CUSTOM_RILD),)
+  LOCAL_SRC_FILES += $(BOARD_CUSTOM_RILD)
+else
+  LOCAL_SRC_FILES += rild.c
+endif
 
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
