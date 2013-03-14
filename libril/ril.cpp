@@ -166,7 +166,7 @@ static struct ril_event s_wake_timeout_event;
 static struct ril_event s_debug_event;
 
 
-static const struct timeval TIMEVAL_WAKE_TIMEOUT = {1,0};
+static const struct timeval TIMEVAL_WAKE_TIMEOUT = {0,1};
 
 static pthread_mutex_t s_pendingRequestsMutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t s_writeMutex = PTHREAD_MUTEX_INITIALIZER;
