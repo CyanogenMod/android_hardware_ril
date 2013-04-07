@@ -106,7 +106,8 @@ typedef enum {
     RADIO_TECH_EHRPD = 13,
     RADIO_TECH_LTE = 14,
     RADIO_TECH_HSPAP = 15, // HSPA+
-    RADIO_TECH_GSM = 16 // Only supports voice
+    RADIO_TECH_GSM = 16, // Only supports voice
+    RADIO_TECH_DCHSPAP = 30
 } RIL_RadioTechnology;
 
 // Do we want to split Data from Voice and the use
