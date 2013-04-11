@@ -16,8 +16,16 @@ LOCAL_SHARED_LIBRARIES := \
     libhardware_legacy
 
 LOCAL_CFLAGS :=
-ifdef BOARD_USE_NEW_LIBRIL_HTC
-    LOCAL_CFLAGS += -DNEW_LIBRIL_HTC
+
+ifeq ($(BOARD_USE_NEW_LIBRIL_HTC),true)
+    LOCAL_CFLAGS += -DNEW_LIBRIL_QCOM
+endif
+ifeq ($(BOARD_USES_NEW_LIBRIL_QCOM),true)
+    LOCAL_CFLAGS += -DNEW_LIBRIL_QCOM
+endif
+
+ifeq ($(BOARD_USES_SONY_RIL),true)
+    LOCAL_CFLAGS += -DSONY_RIL
 endif
 
 LOCAL_MODULE:= libril
