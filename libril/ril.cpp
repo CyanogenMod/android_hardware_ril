@@ -212,6 +212,9 @@ static void dispatchCdmaBrSmsCnf(Parcel &p, RequestInfo *pRI);
 static void dispatchRilCdmaSmsWriteArgs(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
+#ifdef SONY_RIL
+static int responseStringsDataRegistrationState(Parcel &p, void *response, size_t responselen);
+#endif
 static int responseStringsNetworks(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen, bool network_search);
 static int responseString(Parcel &p, void *response, size_t responselen);
@@ -1447,7 +1450,7 @@ static int responseStrings(Parcel &p, void *response, size_t responselen, bool n
         char **p_cur = (char **) response;
 
         numStrings = responselen / sizeof(char *);
-#ifdef NEW_LIBRIL_HTC
+#ifdef QCOM_RIL
         if (network_search == true) {
             // we only want four entries for each network
             p.writeInt32 (numStrings - (numStrings / 5));
@@ -1462,9 +1465,9 @@ static int responseStrings(Parcel &p, void *response, size_t responselen, bool n
         /* each string*/
         startResponse;
         for (int i = 0 ; i < numStrings ; i++) {
-#ifdef NEW_LIBRIL_HTC
+#ifdef QCOM_RIL
             sCount++;
-            // ignore the fifth string that is returned by newer HTC libhtc_ril.so.
+            // ignore the fifth string that is returned by newer QCOM libOEM_ril.so
             if (network_search == true && sCount % 5 == 0) {
                 sCount = 0;
                 continue;
@@ -1479,6 +1482,35 @@ static int responseStrings(Parcel &p, void *response, size_t responselen, bool n
     return 0;
 }
 
+#ifdef SONY_RIL
+/*
+ * RIL_RADIO_TECHNOLOGY: 18 (SONY HSPAP_DC) ==> 15 (HSPAP)
+ */
+static int responseStringsDataRegistrationState(Parcel &p, void *response, size_t responselen) {
+
+    if (response == NULL && responselen != 0) {
+        ALOGE("invalid response: NULL");
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+    if (responselen % sizeof(char *) != 0) {
+        ALOGE("invalid response length %d expected multiple of %d\n",
+            (int)responselen, (int)sizeof(char *));
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+
+    char **p_cur = (char **) response;
+
+    if (p_cur[3] != NULL) {
+        if (strncmp(p_cur[3], "18", 2) == 0) {
+            ALOGE("DATA_REGISTRATION_STATE: old radio tech=18 (HSPAP_DC), new radio tech=15 (HSPAP)");
+            // RIL_RADIO_TECHNOLOGY_HSPAP = 15
+            strncpy(p_cur[3], "15", 2);
+        }
+    }
+
+    return responseStrings(p, response, responselen);
+}
+#endif
 
 /**
  * NULL strings are accepted

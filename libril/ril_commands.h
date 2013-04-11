@@ -35,7 +35,11 @@
     {RIL_REQUEST_LAST_CALL_FAIL_CAUSE, dispatchVoid, responseInts},
     {RIL_REQUEST_SIGNAL_STRENGTH, dispatchVoid, responseRilSignalStrength},
     {RIL_REQUEST_VOICE_REGISTRATION_STATE, dispatchVoid, responseStrings},
+#ifdef SONY_RIL
+    {RIL_REQUEST_DATA_REGISTRATION_STATE, dispatchVoid, responseStringsDataRegistrationState},
+#else
     {RIL_REQUEST_DATA_REGISTRATION_STATE, dispatchVoid, responseStrings},
+#endif
     {RIL_REQUEST_OPERATOR, dispatchVoid, responseStrings},
     {RIL_REQUEST_RADIO_POWER, dispatchInts, responseVoid},
     {RIL_REQUEST_DTMF, dispatchString, responseVoid},
