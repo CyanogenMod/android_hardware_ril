@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2010 The Android Open Source Project
+/*
+ * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,4 +14,25 @@
  * limitations under the License.
  */
 
-// TOOD: Add tests
+#ifndef LIBRILUTILS_H
+#define LIBRILUTILS_H
+
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * Return system time in nanos.
+ *
+ * This is a monotonicly increasing clock and
+ * return the same value as System.nanoTime in java.
+ */
+uint64_t ril_nano_time();
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif // LIBRILUTILS_H

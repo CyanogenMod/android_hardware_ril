@@ -1,5 +1,5 @@
-/**
- * Copyright (C) 2010 The Android Open Source Project
+/*
+ * Copyright (C) 2013 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,4 +14,11 @@
  * limitations under the License.
  */
 
-// TOOD: Add tests
+#include <telephony/librilutils.h>
+#include <time.h>
+
+uint64_t ril_nano_time() {
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return now.tv_sec * 1000000000LL + now.tv_nsec;
+}
