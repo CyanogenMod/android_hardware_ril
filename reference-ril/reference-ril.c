@@ -1,6 +1,9 @@
 /* //device/system/reference-ril/reference-ril.c
 **
 ** Copyright 2006, The Android Open Source Project
+** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+**
+** Not a Contribution
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -199,6 +202,7 @@ static pthread_cond_t s_state_cond = PTHREAD_COND_INITIALIZER;
 static int s_port = -1;
 static const char * s_device_path = NULL;
 static int          s_device_socket = 0;
+const char * ril_inst_id = NULL;
 
 /* trigger change to this with s_state_cond */
 static int s_closed = 0;
@@ -210,6 +214,14 @@ static char *sATBufferCur = NULL;
 static const struct timeval TIMEVAL_SIMPOLL = {1,0};
 static const struct timeval TIMEVAL_CALLSTATEPOLL = {0,500000};
 static const struct timeval TIMEVAL_0 = {0,0};
+
+static int s_ims_registered  = 0;        // 0==unregistered
+static int s_ims_services    = 1;        // & 0x1 == sms over ims supported
+static int s_ims_format    = 1;          // FORMAT_3GPP(1) vs FORMAT_3GPP2(2);
+static int s_ims_cause_retry = 0;        // 1==causes sms over ims to temp fail
+static int s_ims_cause_perm_failure = 0; // 1==causes sms over ims to permanent fail
+static int s_ims_gsm_retry   = 0;        // 1==causes sms over gsm to temp fail
+static int s_ims_gsm_fail    = 0;        // 1==causes sms over gsm to permanent fail
 
 #ifdef WORKAROUND_ERRONEOUS_ANSWER
 // Max number of times we'll try to repoll when we think
@@ -753,6 +765,36 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 error:
     RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
+}
+
+static void setUiccSubscription(int request, void *data, size_t datalen, RIL_Token t)
+{
+    RIL_SelectUiccSub *uiccSubscrInfo;
+    uiccSubscrInfo = (RIL_SelectUiccSub *)data;
+    int response = 0;
+
+    RLOGD("setUiccSubscription() RILD=%s instance.", ril_inst_id);
+    // TODO: DSDS: Need to implement this.
+    // workarround: send success for now.
+    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+
+    if (uiccSubscrInfo->act_status == RIL_UICC_SUBSCRIPTION_ACTIVATE) {
+        RLOGD("setUiccSubscription() : Activate Request: sending SUBSCRIPTION_STATUS_CHANGED");
+        response = 1; // ACTIVATED
+        RIL_onUnsolicitedResponse (
+            RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED,
+            &response, sizeof(response));
+    } else {
+        RLOGD("setUiccSubscriptionSource() : Deactivate Request");
+    }
+}
+
+static void setDataSubscription(int request, void *data, size_t datalen, RIL_Token t)
+{
+    RLOGD("setDataSubscriptionSource()") ;
+    // TODO: DSDS: Need to implement this.
+    // workarround: send success for now.
+    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 }
 
 static void requestDial(void *data, size_t datalen, RIL_Token t)
@@ -1501,12 +1543,14 @@ static void requestCdmaSendSMS(void *data, size_t datalen, RIL_Token t)
     // But it is not implemented yet.
 
     memset(&response, 0, sizeof(response));
+    response.messageRef = 1;
     RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(response));
     return;
 
 error:
     // Cdma Send SMS will always cause send retry error.
-    RIL_onRequestComplete(t, RIL_E_SMS_SEND_FAIL_RETRY, NULL, 0);
+    response.messageRef = -1;
+    RIL_onRequestComplete(t, RIL_E_SMS_SEND_FAIL_RETRY, &response, sizeof(response));
 }
 
 static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
@@ -1518,6 +1562,12 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
     char *cmd1, *cmd2;
     RIL_SMS_Response response;
     ATResponse *p_response = NULL;
+
+    memset(&response, 0, sizeof(response));
+    RLOGD("requestSendSMS datalen =%d", datalen);
+
+    if (s_ims_gsm_fail != 0) goto error;
+    if (s_ims_gsm_retry != 0) goto error2;
 
     smsc = ((const char **)data)[0];
     pdu = ((const char **)data)[1];
@@ -1536,17 +1586,68 @@ static void requestSendSMS(void *data, size_t datalen, RIL_Token t)
 
     if (err != 0 || p_response->success == 0) goto error;
 
-    memset(&response, 0, sizeof(response));
-
     /* FIXME fill in messageRef and ackPDU */
-
+    response.messageRef = 1;
     RIL_onRequestComplete(t, RIL_E_SUCCESS, &response, sizeof(response));
     at_response_free(p_response);
 
     return;
 error:
-    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+    response.messageRef = -2;
+    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, &response, sizeof(response));
     at_response_free(p_response);
+    return;
+error2:
+    // send retry error.
+    response.messageRef = -1;
+    RIL_onRequestComplete(t, RIL_E_SMS_SEND_FAIL_RETRY, &response, sizeof(response));
+    at_response_free(p_response);
+    return;
+}
+
+static void requestImsSendSMS(void *data, size_t datalen, RIL_Token t)
+{
+    RIL_IMS_SMS_Message *p_args;
+    RIL_SMS_Response response;
+
+    memset(&response, 0, sizeof(response));
+
+    RLOGD("requestImsSendSMS: datalen=%d, "
+        "registered=%d, service=%d, format=%d, ims_perm_fail=%d, "
+        "ims_retry=%d, gsm_fail=%d, gsm_retry=%d",
+        datalen, s_ims_registered, s_ims_services, s_ims_format,
+        s_ims_cause_perm_failure, s_ims_cause_retry, s_ims_gsm_fail,
+        s_ims_gsm_retry);
+
+    // figure out if this is gsm/cdma format
+    // then route it to requestSendSMS vs requestCdmaSendSMS respectively
+    p_args = (RIL_IMS_SMS_Message *)data;
+
+    if (0 != s_ims_cause_perm_failure ) goto error;
+
+    // want to fail over ims and this is first request over ims
+    if (0 != s_ims_cause_retry && 0 == p_args->retry) goto error2;
+
+    if (RADIO_TECH_3GPP == p_args->tech) {
+        return requestSendSMS(p_args->message.gsmMessage,
+                datalen - sizeof(RIL_RadioTechnologyFamily),
+                t);
+    } else if (RADIO_TECH_3GPP2 == p_args->tech) {
+        return requestCdmaSendSMS(p_args->message.cdmaMessage,
+                datalen - sizeof(RIL_RadioTechnologyFamily),
+                t);
+    } else {
+        RLOGE("requestImsSendSMS invalid format value =%d", p_args->tech);
+    }
+
+error:
+    response.messageRef = -2;
+    RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, &response, sizeof(response));
+    return;
+
+error2:
+    response.messageRef = -1;
+    RIL_onRequestComplete(t, RIL_E_SMS_SEND_FAIL_RETRY, &response, sizeof(response));
 }
 
 static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
@@ -1670,6 +1771,48 @@ error:
     RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
 
+}
+
+static void requestGetDataCallProfile(void *data, size_t datalen, RIL_Token t)
+{
+    //ATResponse *p_response = NULL;
+    char *response = NULL;
+    char *respPtr = NULL;
+    int  responseLen = 0;
+    int  numProfiles = 1; // hard coded to return only one profile
+    int  i = 0;
+
+    // TBD: AT command support
+
+    int mallocSize = 0;
+    mallocSize += (sizeof(RIL_DataCallProfileInfo));
+
+    response = (char*)alloca(mallocSize + sizeof(int));
+    respPtr = response;
+    memcpy(respPtr, (char*)&numProfiles, sizeof(numProfiles));
+    respPtr += sizeof(numProfiles);
+    responseLen += sizeof(numProfiles);
+
+    // Fill up 'numProfiles' dummy 'RIL_DataCallProfileInfo;
+    for (i = 0; i < numProfiles; i++)
+    {
+        RIL_DataCallProfileInfo dummyProfile;
+
+        // Adding arbitrary values for the dummy response
+        dummyProfile.profileId = i+1;
+        dummyProfile.priority = i+10;
+        RLOGI("profileId %d priority %d", dummyProfile.profileId, dummyProfile.priority);
+
+        responseLen += sizeof(RIL_DataCallProfileInfo);
+        memcpy(respPtr, (char*)&dummyProfile, sizeof(RIL_DataCallProfileInfo));
+        respPtr += sizeof(RIL_DataCallProfileInfo);
+    }
+
+    RLOGI("requestGetDataCallProfile():reponseLen:%d, %d profiles", responseLen, i);
+    RIL_onRequestComplete(t, RIL_E_SUCCESS, response, responseLen);
+
+    // at_response_free(p_response);
+    return;
 }
 
 static void requestSMSAcknowledge(void *data, size_t datalen, RIL_Token t)
@@ -1899,7 +2042,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
      * when RADIO_STATE_UNAVAILABLE.
      */
     if (sState == RADIO_STATE_UNAVAILABLE
-        && request != RIL_REQUEST_GET_SIM_STATUS
+        && !(request == RIL_REQUEST_GET_SIM_STATUS || request == RIL_REQUEST_GET_DATA_CALL_PROFILE)
     ) {
         RIL_onRequestComplete(t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
         return;
@@ -1910,7 +2053,8 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
      */
     if (sState == RADIO_STATE_OFF
         && !(request == RIL_REQUEST_RADIO_POWER
-            || request == RIL_REQUEST_GET_SIM_STATUS)
+            || request == RIL_REQUEST_GET_SIM_STATUS
+            || request == RIL_REQUEST_GET_DATA_CALL_PROFILE)
     ) {
         RIL_onRequestComplete(t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
         return;
@@ -2048,13 +2192,20 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             break;
         }
         case RIL_REQUEST_SEND_SMS:
+        case RIL_REQUEST_SEND_SMS_EXPECT_MORE:
             requestSendSMS(data, datalen, t);
             break;
         case RIL_REQUEST_CDMA_SEND_SMS:
             requestCdmaSendSMS(data, datalen, t);
             break;
+        case RIL_REQUEST_IMS_SEND_SMS:
+            requestImsSendSMS(data, datalen, t);
+            break;
         case RIL_REQUEST_SETUP_DATA_CALL:
             requestSetupDataCall(data, datalen, t);
+            break;
+        case RIL_REQUEST_GET_DATA_CALL_PROFILE:
+            requestGetDataCallProfile(data, datalen, t);
             break;
         case RIL_REQUEST_SMS_ACKNOWLEDGE:
             requestSMSAcknowledge(data, datalen, t);
@@ -2170,6 +2321,28 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             requestEnterSimPin(data, datalen, t);
             break;
 
+       case RIL_REQUEST_IMS_REGISTRATION_STATE:
+        {
+            int reply[2];
+            //0==unregistered, 1==registered
+            reply[0] = s_ims_registered;
+
+            //to be used when changed to include service supporated info
+            //reply[1] = s_ims_services;
+
+            // FORMAT_3GPP(1) vs FORMAT_3GPP2(2);
+            reply[1] = s_ims_format;
+
+            RLOGD("IMS_REGISTRATION=%d, format=%d ",
+                    reply[0], reply[1]);
+            if (reply[1] != -1) {
+                RIL_onRequestComplete(t, RIL_E_SUCCESS, reply, sizeof(reply));
+            } else {
+                RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
+            }
+            break;
+        }
+
         case RIL_REQUEST_VOICE_RADIO_TECH:
             {
                 int tech = techFromModemType(TECH(sMdmInfo));
@@ -2193,6 +2366,14 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
 
         case RIL_REQUEST_SET_UNSOL_CELL_INFO_LIST_RATE:
             requestSetCellInfoListRate(data, datalen, t);
+            break;
+
+        case RIL_REQUEST_SET_UICC_SUBSCRIPTION:
+            setUiccSubscription(request, data, datalen, t);
+            break;
+
+        case RIL_REQUEST_SET_DATA_SUBSCRIPTION:
+            setDataSubscription(request, data, datalen, t);
             break;
 
         /* CDMA Specific Requests */
@@ -2929,6 +3110,18 @@ static void waitForClose()
     pthread_mutex_unlock(&s_state_mutex);
 }
 
+static void sendUnsolImsNetworkStateChanged()
+{
+#if 0  // to be used when unsol is changed to return data.
+    int reply[2];
+    reply[0] = s_ims_registered;
+    reply[1] = s_ims_services;
+    reply[1] = s_ims_format;
+#endif
+    RIL_onUnsolicitedResponse(RIL_UNSOL_RESPONSE_IMS_NETWORK_STATE_CHANGED,
+            NULL, 0);
+}
+
 /**
  * Called by atchannel when an unsolicited line appears
  * This is called on atchannel's reader thread. AT commands may
@@ -3141,12 +3334,19 @@ mainLoop(void *param)
                      * now another "legacy" way of communicating with the
                      * emulator), we will try to connecto to gsm service via
                      * qemu pipe. */
-                    fd = qemu_pipe_open("qemud:gsm");
+                    char qemuPipe[MAX_QEMU_PIPE_NAME_LENGTH] = "qemud:gsm";
+                    if (strncmp(ril_inst_id, "0", MAX_CLIENT_ID_LENGTH)) {
+                        strncat(qemuPipe, ril_inst_id ,MAX_QEMU_PIPE_NAME_LENGTH);
+                    }
+                    RLOGD("qemu pipe name : %s\n", qemuPipe);
+                    fd = qemu_pipe_open(qemuPipe);
+
                     if (fd < 0) {
                         /* Qemu-specific control socket */
                         fd = socket_local_client( "qemud",
                                                   ANDROID_SOCKET_NAMESPACE_RESERVED,
                                                   SOCK_STREAM );
+                    RLOGD("qemu pipe name : %d\n", fd);
                         if (fd >= 0 ) {
                             char  answer[2];
 
@@ -3214,7 +3414,7 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
 
     s_rilenv = env;
 
-    while ( -1 != (opt = getopt(argc, argv, "p:d:s:"))) {
+    while ( -1 != (opt = getopt(argc, argv, "p:d:s:c:"))) {
         switch (opt) {
             case 'p':
                 s_port = atoi(optarg);
@@ -3234,6 +3434,11 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
                 s_device_path   = optarg;
                 s_device_socket = 1;
                 RLOGI("Opening socket %s\n", s_device_path);
+            break;
+
+            case 'c':
+                ril_inst_id = optarg;
+                RLOGI("ReferRil is using instance %s ", ril_inst_id);
             break;
 
             default:
