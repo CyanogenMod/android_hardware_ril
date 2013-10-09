@@ -2360,6 +2360,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             requestGetPreferredNetworkType(request, data, datalen, t);
             break;
 
+#ifndef RIL_NO_CELL_INFO_LIST
         case RIL_REQUEST_GET_CELL_INFO_LIST:
             requestGetCellInfoList(data, datalen, t);
             break;
@@ -2367,6 +2368,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
         case RIL_REQUEST_SET_UNSOL_CELL_INFO_LIST_RATE:
             requestSetCellInfoListRate(data, datalen, t);
             break;
+#endif
 
         case RIL_REQUEST_SET_UICC_SUBSCRIPTION:
             setUiccSubscription(request, data, datalen, t);
