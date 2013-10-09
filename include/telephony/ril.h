@@ -3618,6 +3618,7 @@ typedef struct {
  */
 #define RIL_REQUEST_VOICE_RADIO_TECH 108
 
+#ifndef RIL_NO_CELL_INFO_LIST
 /**
  * RIL_REQUEST_GET_CELL_INFO_LIST
  *
@@ -3651,6 +3652,7 @@ typedef struct {
  *  GENERIC_FAILURE
  */
 #define RIL_REQUEST_SET_UNSOL_CELL_INFO_LIST_RATE 110
+#endif
 
 /**
  * RIL_REQUEST_SET_INITIAL_ATTACH_APN
@@ -3685,7 +3687,11 @@ typedef struct {
  *
  * ((int *) response)[2] is of type const RIL_IMS_SMS_Format
  */
+#ifndef RIL_NO_CELL_INFO_LIST
 #define RIL_REQUEST_IMS_REGISTRATION_STATE 112
+#else
+#define RIL_REQUEST_IMS_REGISTRATION_STATE 109
+#endif
 
 /**
  * RIL_REQUEST_IMS_SEND_SMS
@@ -3708,7 +3714,11 @@ typedef struct {
  *  GENERIC_FAILURE
  *
  */
+#ifndef RIL_NO_CELL_INFO_LIST
 #define RIL_REQUEST_IMS_SEND_SMS 113
+#else
+#define RIL_REQUEST_IMS_SEND_SMS 110
+#endif
 
 /**
  * RIL_REQUEST_GET_DATA_CALL_PROFILE
@@ -3731,8 +3741,12 @@ typedef struct {
  *  RIL_E_DATA_CALL_PROFILE_NOT_AVAILABLE
  *
  */
+#ifndef RIL_NO_CELL_INFO_LIST
 #define RIL_REQUEST_GET_DATA_CALL_PROFILE 114
-
+#else
+#define RIL_REQUEST_GET_DATA_CALL_PROFILE 111
+#endif
+ 
 /**
  * RIL_REQUEST_SET_UICC_SUBSCRIPTION
  *
@@ -3749,7 +3763,11 @@ typedef struct {
  *  SUBSCRIPTION_NOT_SUPPORTED
  *
  */
+#ifndef RIL_NO_CELL_INFO_LIST
 #define RIL_REQUEST_SET_UICC_SUBSCRIPTION  115
+#else
+#define RIL_REQUEST_SET_UICC_SUBSCRIPTION  118
+#endif
 
 /**
  *  RIL_REQUEST_SET_DATA_SUBSCRIPTION
@@ -3767,7 +3785,11 @@ typedef struct {
  *  SUBSCRIPTION_NOT_SUPPORTED
  *
  */
+#ifndef RIL_NO_CELL_INFO_LIST
 #define RIL_REQUEST_SET_DATA_SUBSCRIPTION  116
+#else
+#define RIL_REQUEST_SET_DATA_SUBSCRIPTION  119
+#endif
 
 /***********************************************************************/
 
@@ -4246,6 +4268,7 @@ typedef struct {
  */
 #define RIL_UNSOL_VOICE_RADIO_TECH_CHANGED 1035
 
+#ifndef RIL_NO_CELL_INFO_LIST
 /**
  * RIL_UNSOL_CELL_INFO_LIST
  *
@@ -4257,6 +4280,7 @@ typedef struct {
  * "response" is an array of RIL_CellInfo.
  */
 #define RIL_UNSOL_CELL_INFO_LIST 1036
+#endif
 
 /*
  * RIL_UNSOL_RESPONSE_IMS_NETWORK_STATE_CHANGED
@@ -4275,7 +4299,11 @@ typedef struct {
  *
  * ((int *) response)[2] is of type const RIL_IMS_SMS_Format
  */
+#ifndef RIL_NO_CELL_INFO_LIST
 #define RIL_UNSOL_RESPONSE_IMS_NETWORK_STATE_CHANGED 1037
+#else
+#define RIL_UNSOL_RESPONSE_IMS_NETWORK_STATE_CHANGED 1036
+#endif
 
 /**
  * RIL_UNSOL_ON_SS

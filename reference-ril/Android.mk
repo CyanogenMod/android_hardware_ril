@@ -36,6 +36,10 @@ ifeq ($(TARGET_DEVICE),dream)
   LOCAL_CFLAGS += -DPOLL_CALL_STATE -DUSE_QMI
 endif
 
+ifeq ($(BOARD_RIL_NO_CELLINFOLIST),true)
+  LOCAL_CFLAGS += -DRIL_NO_CELL_INFO_LIST
+endif
+
 ifeq (foo,foo)
   #build shared library
   LOCAL_SHARED_LIBRARIES += \
