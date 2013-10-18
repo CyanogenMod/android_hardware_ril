@@ -59,7 +59,9 @@ extern void RIL_onUnsolicitedResponse(int unsolResponse, const void *data,
 extern void RIL_requestTimedCallback (RIL_TimedCallback callback,
                                void *param, const struct timeval *relativeTime);
 
+#ifdef QCOM_HARDWARE
 extern void RIL_setRilSocketName(char * s);
+#endif
 
 
 static struct RIL_Env s_rilEnv = {
@@ -140,6 +142,7 @@ int main(int argc, char **argv)
         }
     }
 
+#ifdef QCOM_HARDWARE
     if (atoi(clientId) >= MAX_RILDS) {
         RLOGE("Max Number of rild's supported is: %d", MAX_RILDS);
         exit(0);
@@ -149,6 +152,7 @@ int main(int argc, char **argv)
     if (strncmp(clientId, "0", MAX_CLIENT_ID_LENGTH)) {
         RIL_setRilSocketName(clientId);
     }
+#endif
 
     if (rilLibPath == NULL) {
         if ( 0 == property_get(LIB_PATH_PROPERTY, libPath, NULL)) {
@@ -300,12 +304,28 @@ OpenLib:
         RLOGE("Max arguments are passed for rild, args count = %d", argc);
         exit(0);
     }
+#ifdef QCOM_HARDWARE
+    /* Client-id is a qualcomm thing */
     s_argv[argc++] = "-c";
     s_argv[argc++] = clientId;
+#endif
 
     RLOGD("RIL_Init argc = %d clientId = %s", argc, s_argv[argc-1]);
 
     funcs = rilInit(&s_rilEnv, argc, s_argv);
+
+#ifdef QCOM_HARDWARE
+    if (funcs == NULL) {
+        /* Pre-multi-client qualcomm vendor libraries won't support "-c" either, so
+         * try again without it. This should only happen on ancient qcoms, so raise
+         * a big fat warning
+         */
+        argc -= 2;
+        RLOGE("============= Retrying RIL_Init without a client id. This is only required for very old versions,");
+        RLOGE("============= and you're likely to have more radio breakage elsewhere!");
+        funcs = rilInit(&s_rilEnv, argc, s_argv);
+    }
+#endif
 
     RIL_register(funcs);
 
