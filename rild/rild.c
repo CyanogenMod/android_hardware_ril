@@ -48,7 +48,7 @@ static void usage(const char *argv0) {
     exit(EXIT_FAILURE);
 }
 
-extern char rild[MAX_SOCKET_NAME_LENGTH];
+extern char rild[MAX_SOCKET_NAME_LENGTH] __attribute__((weak));
 
 extern void RIL_register (const RIL_RadioFunctions *callbacks);
 
@@ -73,6 +73,7 @@ extern void RIL_onUnsolicitedResponse(int unsolResponse, const void *data,
 extern void RIL_requestTimedCallback (RIL_TimedCallback callback,
         void *param, const struct timeval *relativeTime);
 
+extern void RIL_setRilSocketName(char * s) __attribute__((weak));
 
 static struct RIL_Env s_rilEnv = {
     RIL_onRequestComplete,
@@ -184,7 +185,11 @@ int main(int argc, char **argv) {
     }
     if (strncmp(clientId, "0", MAX_CLIENT_ID_LENGTH)) {
         strlcat(rild, clientId, MAX_SOCKET_NAME_LENGTH);
-        RIL_setRilSocketName(rild);
+        if (RIL_setRilSocketName) {
+            RIL_setRilSocketName(rild);
+        } else {
+            RLOGE("Trying to instantiate multiple rild sockets without a compatible libril!");
+        }
     }
 
     if (rilLibPath == NULL) {
