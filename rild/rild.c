@@ -300,12 +300,28 @@ OpenLib:
         RLOGE("Max arguments are passed for rild, args count = %d", argc);
         exit(0);
     }
+#ifndef QCOM_HARDWARE
+    /* Client-id is a qualcomm thing */
     s_argv[argc++] = "-c";
     s_argv[argc++] = clientId;
+#endif
 
     RLOGD("RIL_Init argc = %d clientId = %s", argc, s_argv[argc-1]);
 
     funcs = rilInit(&s_rilEnv, argc, s_argv);
+
+#ifdef QCOM_HARDWARE
+    if (funcs == NULL) {
+        /* Pre-multi-client qualcomm vendor libraries won't support "-c" either, so
+         * try again without it. This should only happen on ancient qcoms, so raise
+         * a big fat warning
+         */
+        argc -= 2;
+        RLOGE("============= Retrying RIL_Init without a client id. This is only required for very old versions,");
+        RLOGE("============= and you're likely to have more radio breakage elsewhere!");
+        funcs = rilInit(&s_rilEnv, argc, s_argv);
+    }
+#endif
 
     RIL_register(funcs);
 
