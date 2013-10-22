@@ -1726,7 +1726,7 @@ static int responseStrings(Parcel &p, void *response, size_t responselen, bool n
         char **p_cur = (char **) response;
 
         numStrings = responselen / sizeof(char *);
-#ifdef NEW_LIBRIL_HTC
+#ifdef RIL_RESPONSE_5_ELEMENTS
         if (network_search == true) {
             // we only want four entries for each network
             p.writeInt32 (numStrings - (numStrings / 5));
@@ -1741,9 +1741,9 @@ static int responseStrings(Parcel &p, void *response, size_t responselen, bool n
         /* each string*/
         startResponse;
         for (int i = 0 ; i < numStrings ; i++) {
-#ifdef NEW_LIBRIL_HTC
+#ifdef RIL_RESPONSE_5_ELEMENTS
             sCount++;
-            // ignore the fifth string that is returned by newer HTC libhtc_ril.so.
+            // ignore the fifth string that is returned by newer QCOM libOEM_ril.so.
             if (network_search == true && sCount % 5 == 0) {
                 sCount = 0;
                 continue;
