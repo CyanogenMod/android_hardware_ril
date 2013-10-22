@@ -60,7 +60,7 @@ extern void RIL_requestTimedCallback (RIL_TimedCallback callback,
                                void *param, const struct timeval *relativeTime);
 
 #ifdef QCOM_HARDWARE
-extern void RIL_setRilSocketName(char * s);
+extern void RIL_setRilSocketName(char * s) __attribute__((weak));
 #endif
 
 
@@ -150,7 +150,11 @@ int main(int argc, char **argv)
     RLOGD ("RIL Client Id:=%s", clientId);
 
     if (strncmp(clientId, "0", MAX_CLIENT_ID_LENGTH)) {
-        RIL_setRilSocketName(clientId);
+        if (RIL_setRilSocketName) {
+            RIL_setRilSocketName(clientId);
+        } else {
+            RLOGE("Trying to instantiate multiple rild sockets without a compatible libril!");
+        }
     }
 #endif
 
