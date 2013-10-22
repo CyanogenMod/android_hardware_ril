@@ -4344,6 +4344,8 @@ typedef struct {
 #define RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED 1040
 /***********************************************************************/
 
+/* COMPATIBILITY WITH MAINLINE */
+#define RIL_REQUEST_ENTER_NETWORK_DEPERSONALIZATION RIL_REQUEST_ENTER_DEPERSONALIZATION_CODE
 
 /**
  * RIL_Request Function pointer
