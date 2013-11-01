@@ -14,7 +14,8 @@ LOCAL_SHARED_LIBRARIES := \
     libutils \
     libbinder \
     libcutils \
-    libhardware_legacy
+    libhardware_legacy \
+    librilutils
 
 LOCAL_CFLAGS :=
 ifdef BOARD_USE_NEW_LIBRIL_HTC
@@ -51,7 +52,8 @@ LOCAL_SRC_FILES:= \
 
 LOCAL_STATIC_LIBRARIES := \
     libutils_static \
-    libcutils
+    libcutils \
+    librilutils_static
 
 LOCAL_CFLAGS :=
 
