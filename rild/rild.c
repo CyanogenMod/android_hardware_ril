@@ -163,7 +163,7 @@ int main(int argc, char **argv)
 #define  REFERENCE_RIL_PATH  "/system/lib/libreference-ril.so"
 
         /* first, read /proc/cmdline into memory */
-        char          buffer[1024], *p, *q;
+        char          buffer[1024] = {'\0'}, *p, *q;
         int           len;
         int           fd = open("/proc/cmdline",O_RDONLY);
 
