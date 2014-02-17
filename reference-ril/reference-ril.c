@@ -1,6 +1,8 @@
 /* //device/system/reference-ril/reference-ril.c
 **
-** Copyright 2006, The Android Open Source Project
+** Copyright (c) 2012-2013, The Linux Foundation. All rights reserved.
+** Not a Contribution
+** Copyright 2006 The Android Open Source Project
 **
 ** Licensed under the Apache License, Version 2.0 (the "License");
 ** you may not use this file except in compliance with the License.
@@ -199,6 +201,7 @@ static pthread_cond_t s_state_cond = PTHREAD_COND_INITIALIZER;
 static int s_port = -1;
 static const char * s_device_path = NULL;
 static int          s_device_socket = 0;
+const char * ril_inst_id = NULL;
 
 /* trigger change to this with s_state_cond */
 static int s_closed = 0;
@@ -761,6 +764,36 @@ static void requestGetCurrentCalls(void *data, size_t datalen, RIL_Token t)
 error:
     RIL_onRequestComplete(t, RIL_E_GENERIC_FAILURE, NULL, 0);
     at_response_free(p_response);
+}
+
+static void setUiccSubscription(int request, void *data, size_t datalen, RIL_Token t)
+{
+    RIL_SelectUiccSub *uiccSubscrInfo;
+    uiccSubscrInfo = (RIL_SelectUiccSub *)data;
+    int response = 0;
+
+    RLOGD("setUiccSubscription() RILD=%s instance.", ril_inst_id);
+    // TODO: DSDS: Need to implement this.
+    // workaround: send success for now.
+    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+
+    if (uiccSubscrInfo->act_status == RIL_UICC_SUBSCRIPTION_ACTIVATE) {
+        RLOGD("setUiccSubscription() : Activate Request: sending SUBSCRIPTION_STATUS_CHANGED");
+        response = 1; // ACTIVATED
+        RIL_onUnsolicitedResponse (
+            RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED,
+            &response, sizeof(response));
+    } else {
+        RLOGD("setUiccSubscriptionSource() : Deactivate Request");
+    }
+}
+
+static void setDataSubscription(int request, void *data, size_t datalen, RIL_Token t)
+{
+    RLOGD("setDataSubscriptionSource()") ;
+    // TODO: DSDS: Need to implement this.
+    // workaround: send success for now.
+    RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
 }
 
 static void requestDial(void *data, size_t datalen, RIL_Token t)
@@ -1739,6 +1772,48 @@ error:
 
 }
 
+static void requestGetDataCallProfile(void *data, size_t datalen, RIL_Token t)
+{
+    //ATResponse *p_response = NULL;
+    char *response = NULL;
+    char *respPtr = NULL;
+    int  responseLen = 0;
+    int  numProfiles = 1; // hard coded to return only one profile
+    int  i = 0;
+
+    // TBD: AT command support
+
+    int mallocSize = 0;
+    mallocSize += (sizeof(RIL_DataCallProfileInfo));
+
+    response = (char*)alloca(mallocSize + sizeof(int));
+    respPtr = response;
+    memcpy(respPtr, (char*)&numProfiles, sizeof(numProfiles));
+    respPtr += sizeof(numProfiles);
+    responseLen += sizeof(numProfiles);
+
+    // Fill up 'numProfiles' dummy 'RIL_DataCallProfileInfo;
+    for (i = 0; i < numProfiles; i++)
+    {
+        RIL_DataCallProfileInfo dummyProfile;
+
+        // Adding arbitrary values for the dummy response
+        dummyProfile.profileId = i+1;
+        dummyProfile.priority = i+10;
+        RLOGI("profileId %d priority %d", dummyProfile.profileId, dummyProfile.priority);
+
+        responseLen += sizeof(RIL_DataCallProfileInfo);
+        memcpy(respPtr, (char*)&dummyProfile, sizeof(RIL_DataCallProfileInfo));
+        respPtr += sizeof(RIL_DataCallProfileInfo);
+    }
+
+    RLOGI("requestGetDataCallProfile():reponseLen:%d, %d profiles", responseLen, i);
+    RIL_onRequestComplete(t, RIL_E_SUCCESS, response, responseLen);
+
+    // at_response_free(p_response);
+    return;
+}
+
 static void requestSMSAcknowledge(void *data, size_t datalen, RIL_Token t)
 {
     int ackSuccess;
@@ -1966,7 +2041,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
      * when RADIO_STATE_UNAVAILABLE.
      */
     if (sState == RADIO_STATE_UNAVAILABLE
-        && request != RIL_REQUEST_GET_SIM_STATUS
+        && !(request == RIL_REQUEST_GET_SIM_STATUS || request == RIL_REQUEST_GET_DATA_CALL_PROFILE)
     ) {
         RIL_onRequestComplete(t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
         return;
@@ -1977,7 +2052,8 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
      */
     if (sState == RADIO_STATE_OFF
         && !(request == RIL_REQUEST_RADIO_POWER
-            || request == RIL_REQUEST_GET_SIM_STATUS)
+            || request == RIL_REQUEST_GET_SIM_STATUS
+            || request == RIL_REQUEST_GET_DATA_CALL_PROFILE)
     ) {
         RIL_onRequestComplete(t, RIL_E_RADIO_NOT_AVAILABLE, NULL, 0);
         return;
@@ -2115,6 +2191,7 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             break;
         }
         case RIL_REQUEST_SEND_SMS:
+        case RIL_REQUEST_SEND_SMS_EXPECT_MORE:
             requestSendSMS(data, datalen, t);
             break;
         case RIL_REQUEST_CDMA_SEND_SMS:
@@ -2125,6 +2202,9 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             break;
         case RIL_REQUEST_SETUP_DATA_CALL:
             requestSetupDataCall(data, datalen, t);
+            break;
+        case RIL_REQUEST_GET_DATA_CALL_PROFILE:
+            requestGetDataCallProfile(data, datalen, t);
             break;
         case RIL_REQUEST_SMS_ACKNOWLEDGE:
             requestSMSAcknowledge(data, datalen, t);
@@ -2286,6 +2366,14 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
             requestSetCellInfoListRate(data, datalen, t);
             break;
 
+        case RIL_REQUEST_SET_UICC_SUBSCRIPTION:
+            setUiccSubscription(request, data, datalen, t);
+            break;
+
+        case RIL_REQUEST_SET_DATA_SUBSCRIPTION:
+            setDataSubscription(request, data, datalen, t);
+            break;
+
         /* CDMA Specific Requests */
         case RIL_REQUEST_BASEBAND_VERSION:
             if (TECH_BIT(sMdmInfo) == MDM_CDMA) {
@@ -2428,6 +2516,9 @@ setRadioState(RIL_RadioState newState)
     /* do these outside of the mutex */
     if (sState != oldState) {
         RIL_onUnsolicitedResponse (RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED,
+                                    NULL, 0);
+        // Sim state can change as result of radio state change
+        RIL_onUnsolicitedResponse (RIL_UNSOL_RESPONSE_SIM_STATUS_CHANGED,
                                     NULL, 0);
 
         /* FIXME onSimReady() and onRadioPowerOn() cannot be called
@@ -3244,7 +3335,13 @@ mainLoop(void *param)
                      * now another "legacy" way of communicating with the
                      * emulator), we will try to connecto to gsm service via
                      * qemu pipe. */
-                    fd = qemu_pipe_open("qemud:gsm");
+                    char qemuPipe[MAX_QEMU_PIPE_NAME_LENGTH] = "qemud:gsm";
+                    if (strncmp(ril_inst_id, "0", MAX_CLIENT_ID_LENGTH)) {
+                        strncat(qemuPipe, ril_inst_id ,MAX_QEMU_PIPE_NAME_LENGTH);
+                    }
+                    RLOGD("qemu pipe name : %s\n", qemuPipe);
+                    fd = qemu_pipe_open(qemuPipe);
+
                     if (fd < 0) {
                         /* Qemu-specific control socket */
                         fd = socket_local_client( "qemud",
@@ -3317,7 +3414,7 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
 
     s_rilenv = env;
 
-    while ( -1 != (opt = getopt(argc, argv, "p:d:s:"))) {
+    while ( -1 != (opt = getopt(argc, argv, "p:d:s:c:"))) {
         switch (opt) {
             case 'p':
                 s_port = atoi(optarg);
@@ -3337,6 +3434,11 @@ const RIL_RadioFunctions *RIL_Init(const struct RIL_Env *env, int argc, char **a
                 s_device_path   = optarg;
                 s_device_socket = 1;
                 RLOGI("Opening socket %s\n", s_device_path);
+            break;
+
+            case 'c':
+                ril_inst_id = optarg;
+                RLOGI("ReferRil is using instance %s ", ril_inst_id);
             break;
 
             default:
