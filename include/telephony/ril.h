@@ -83,7 +83,10 @@ typedef enum {
     RIL_E_SS_MODIFIED_TO_DIAL = 23,             /* SS request modified to DIAL */
     RIL_E_SS_MODIFIED_TO_USSD = 24,             /* SS request modified to USSD */
     RIL_E_SS_MODIFIED_TO_SS = 25,               /* SS request modified to different SS request */
-    RIL_E_SUBSCRIPTION_NOT_SUPPORTED = 26       /* Subscription not supported by RIL */
+    RIL_E_SUBSCRIPTION_NOT_SUPPORTED = 26,      /* Subscription not supported by RIL */
+    RIL_E_MISSING_RESOURCE = 27,                /* No logical channel available */
+    RIL_E_NO_SUCH_ELEMENT = 28,                 /* Application not found on sim */
+    RIL_E_INVALID_PARAMETER = 29                /* TO DO: add description*/
 } RIL_Errno;
 
 typedef enum {
@@ -332,6 +335,9 @@ typedef struct {
 } RIL_Dial;
 
 typedef struct {
+#ifdef RIL_SUPPORTS_SEEK
+    int cla;
+#endif
     int command;    /* one of the commands listed for TS 27.007 +CRSM*/
     int fileid;     /* EF id */
     char *path;     /* "pathid" from TS 27.007 +CRSM command.
@@ -346,6 +352,9 @@ typedef struct {
 } RIL_SIM_IO_v5;
 
 typedef struct {
+#ifdef RIL_SUPPORTS_SEEK
+    int cla;
+#endif
     int command;    /* one of the commands listed for TS 27.007 +CRSM*/
     int fileid;     /* EF id */
     char *path;     /* "pathid" from TS 27.007 +CRSM command.
@@ -3800,6 +3809,91 @@ typedef struct {
  *
  */
 #define RIL_REQUEST_SET_DATA_SUBSCRIPTION  116
+
+/**
+ * RIL_REQUEST_SIM_TRANSMIT_BASIC
+ *
+ * Request APDU exchange on the basic channel.
+ *
+ * "data" is a const RIL_SIM_IO *
+ *
+ * "response" is a const RIL_SIM_IO_Response *
+ *
+ * Valid errors:
+ *
+ * SUCCESS
+ * TO DO: add erros
+ */
+#define RIL_REQUEST_SIM_TRANSMIT_BASIC 117
+
+/**
+ * RIL_REQUEST_SIM_OPEN_CHANNEL
+ *
+ * Open a new logical channel.
+ *
+ * "data" is a const char * containing the AID of the applet
+ *
+ * "response" is a int * containing the channel id
+ *
+ * Valid errors:
+ *
+ * SUCCESS
+ * TO DO: add erros
+ */
+#define RIL_REQUEST_SIM_OPEN_CHANNEL 118
+
+/**
+ * RIL_REQUEST_SIM_CLOSE_CHANNEL
+ *
+ * Close a previoulsy opened logical channel.
+ *
+ * "data" is a const int * containing the channel id
+ *
+ * "response" is NULL
+ *
+ * Valid errors:
+ *
+ * SUCCESS
+ * TO DO: add erros
+ */
+#define RIL_REQUEST_SIM_CLOSE_CHANNEL 119
+
+/**
+ * RIL_REQUEST_SIM_TRANSMIT_CHANNEL
+ *
+ * Exchange APDUs with a UICC over a previously opened logical channel.
+ *
+ * "data" is a const RIL_SIM_IO_v7_CAF *
+ *
+ * "response" is a const RIL_SIM_IO_Response *
+ *
+ * Valid errors:
+ *
+ * SUCCESS
+ * TO DO: add erros
+ */
+#define RIL_REQUEST_SIM_TRANSMIT_CHANNEL 120
+
+/**
+ * RIL_REQUEST_SIM_GET_ATR
+ *
+ * Get the ATR from SIM Card
+ *
+ * Only valid when radio state is "RADIO_STATE_ON"
+ *
+ * "data" is const int *
+ * ((const int *)data)[0] contains the slot index on the SIM from which ATR is requested.
+ *
+ * "response" is a const char * containing the ATR, See ETSI 102.221 8.1 and ISO/IEC 7816 3
+ *
+ * Valid errors:
+ *
+ * SUCCESS
+ * RADIO_NOT_AVAILABLE (radio resetting)
+ * GENERIC_FAILURE
+ */
+
+#define RIL_REQUEST_SIM_GET_ATR 121
 
 /***********************************************************************/
 
