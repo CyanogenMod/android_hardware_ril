@@ -3336,7 +3336,8 @@ mainLoop(void *param)
                      * emulator), we will try to connecto to gsm service via
                      * qemu pipe. */
                     char qemuPipe[MAX_QEMU_PIPE_NAME_LENGTH] = "qemud:gsm";
-                    if (strncmp(ril_inst_id, "0", MAX_CLIENT_ID_LENGTH)) {
+                    if (ril_inst_id != NULL
+                    		&& strlen(ril_inst_id) <= MAX_CLIENT_ID_LENGTH ) {
                         strncat(qemuPipe, ril_inst_id ,MAX_QEMU_PIPE_NAME_LENGTH);
                     }
                     RLOGD("qemu pipe name : %s\n", qemuPipe);
