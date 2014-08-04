@@ -4721,27 +4721,6 @@ typedef struct {
  */
 #define RIL_UNSOL_RESPONSE_IMS_NETWORK_STATE_CHANGED 1037
 
-/*
- * RIL_UNSOL_ON_SS
- *
- * Called when SS response is received when DIAL/USSD/SS is changed to SS by
- * call control.
- *
- * "data" is const RIL_StkCcUnsolSsResponse *
- *
- */
-#define RIL_UNSOL_ON_SS 1038
-
-/**
- * RIL_UNSOL_STK_CC_ALPHA_NOTIFY
- *
- * Called when there is an ALPHA from UICC during Call Control.
- *
- * "data" is const char * containing ALPHA string from UICC in UTF-8 format.
- *
- */
-#define RIL_UNSOL_STK_CC_ALPHA_NOTIFY 1039
-
 /**
  * RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED
  *
@@ -4756,7 +4735,7 @@ typedef struct {
  * ((const int *)data)[0] == 1 for Subscription Activated
  *
  */
-#define RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED 1040
+#define RIL_UNSOL_UICC_SUBSCRIPTION_STATUS_CHANGED 1038
 
 /**
  * RIL_UNSOL_SRVCC_STATE_NOTIFY
@@ -4769,7 +4748,7 @@ typedef struct {
  *
  */
 
-#define RIL_UNSOL_SRVCC_STATE_NOTIFY 1041
+#define RIL_UNSOL_SRVCC_STATE_NOTIFY 1039
 
 /**
  * RIL_UNSOL_HARDWARE_CONFIG_CHANGED
@@ -4779,7 +4758,7 @@ typedef struct {
  * "data" is an array of RIL_HardwareConfig
  *
  */
-#define RIL_UNSOL_HARDWARE_CONFIG_CHANGED 1042
+#define RIL_UNSOL_HARDWARE_CONFIG_CHANGED 1040
 
 /**
  * RIL_UNSOL_DC_RT_INFO_CHANGED
@@ -4791,7 +4770,28 @@ typedef struct {
  * "data" is the most recent RIL_DcRtInfo
  *
  */
-#define RIL_UNSOL_DC_RT_INFO_CHANGED 1043
+#define RIL_UNSOL_DC_RT_INFO_CHANGED 1041
+
+/*
+ * RIL_UNSOL_ON_SS
+ *
+ * Called when SS response is received when DIAL/USSD/SS is changed to SS by
+ * call control.
+ *
+ * "data" is const RIL_StkCcUnsolSsResponse *
+ *
+ */
+#define RIL_UNSOL_ON_SS 1042
+
+/**
+ * RIL_UNSOL_STK_CC_ALPHA_NOTIFY
+ *
+ * Called when there is an ALPHA from UICC during Call Control.
+ *
+ * "data" is const char * containing ALPHA string from UICC in UTF-8 format.
+ *
+ */
+#define RIL_UNSOL_STK_CC_ALPHA_NOTIFY 1043
 
 /***********************************************************************/
 
