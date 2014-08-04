@@ -4791,7 +4791,7 @@ typedef struct {
  * "data" is the most recent RIL_DcRtInfo
  *
  */
-#define RIL_UNSOL_DC_RT_INFO_CHANGED 1041
+#define RIL_UNSOL_DC_RT_INFO_CHANGED 1043
 
 /***********************************************************************/
 
