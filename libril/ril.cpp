@@ -2348,8 +2348,8 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
             return RIL_ERRNO_INVALID_RESPONSE;
         }
 
-        // Support v6 or v9 with new rils
-        if (responselen % sizeof(RIL_Data_Call_Response_v6) == 0) {
+        // Support v6 only in ril version < 10
+        if (s_callbacks.version < 10) {
             RLOGD("responseDataCallList: v6");
             return responseDataCallListV6(p, response, responselen);
         }
