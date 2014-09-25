@@ -2519,9 +2519,9 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
     if (s_callbacks.version < 5) {
         RLOGD("responseDataCallList: v4");
         return responseDataCallListV4(p, response, responselen);
-    } else if (responselen % sizeof(RIL_Data_Call_Response_v6) == 0) {
+    } else if (s_callbacks.version < 10) {
         return responseDataCallListV6(p, response, responselen);
-    } else if (responselen % sizeof(RIL_Data_Call_Response_v9) == 0) {
+    } else if (s_callbacks.version == 10) {
         return responseDataCallListV9(p, response, responselen);
     } else {
         if (response == NULL && responselen != 0) {
