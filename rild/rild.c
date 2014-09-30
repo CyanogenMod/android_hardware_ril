@@ -154,7 +154,7 @@ int main(int argc, char **argv)
 #ifdef QCOM_HARDWARE
     if (clientId == NULL) {
         clientId = "0";
-    } else if (atoi(clientId) >= MAX_RILDS) {
+    } else if (atoi(clientId) > MAX_RILDS) {
         RLOGE("Max Number of rild's supported is: %d", MAX_RILDS);
         exit(0);
     }
