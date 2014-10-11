@@ -156,7 +156,11 @@ int main(int argc, char **argv)
     }
     if (strncmp(clientId, "0", MAX_CLIENT_ID_LENGTH)) {
         if (RIL_setRilSocketName) {
+#ifdef QCOM_HAS_PREBUILT_RIL
+            RIL_setRilSocketName(clientId);
+#else
             RIL_setRilSocketName(strncat(rild, clientId, MAX_SOCKET_NAME_LENGTH));
+#endif
         } else {
             RLOGE("Trying to instantiate multiple rild sockets without a compatible libril!");
         }
