@@ -880,9 +880,26 @@ dispatchSIM_IO (Parcel &p, RequestInfo *pRI) {
         goto invalid;
     }
 
+    /**
+     * Sonys 4.4.4 QCOM-RIL does not implement 0x2FE2 and returns an error to the framework.
+     * The framework is not amused by this and fails to correctly bring up the radio, so we
+     * are going to return a zero-sized record instead of an error to make the framework happy
+     */
+    if (simIO.v6.fileid == 0x2FE2 && ( simIO.v6.command == 0xB0 || simIO.v6.command == 0xC0)) {
+        ALOGE("pabx: ICC identification via cmd=0x%02X requested, returning empty result.\n", simIO.v6.command);
+        RIL_SIM_IO_Response sr;
+        memset(&sr, 0, sizeof(sr));
+        sr.sw1 = 0x90;
+        sr.sw2 = 0x00; // unused, therefore null
+        sr.simResponse = "0000000000000400000000000000"; // == binary size = 0
+        RIL_onRequestComplete(pRI, RIL_E_SUCCESS, &sr, sizeof(sr)); // eat the D
+        goto skipBlob;
+    }
+
     size = (s_callbacks.version < 6) ? sizeof(simIO.v5) : sizeof(simIO.v6);
     CALL_ONREQUEST(pRI->pCI->requestNumber, &simIO, size, pRI, pRI->socket_id);
 
+skipBlob:
 #ifdef MEMSET_FREED
     memsetString (simIO.v6.path);
     memsetString (simIO.v6.data);
