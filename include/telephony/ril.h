@@ -58,6 +58,8 @@ extern "C" {
 #define MAX_DEBUG_SOCKET_NAME_LENGTH 12
 #define MAX_QEMU_PIPE_NAME_LENGTH  11
 
+#define FEATURE_MTU_CAF 1
+
 typedef void * RIL_Token;
 
 typedef enum {
@@ -322,6 +324,45 @@ typedef struct {
     char *          pcscf;    /* the Proxy Call State Control Function address
                                  via PCO(Protocol Configuration Option) for IMS client. */
 } RIL_Data_Call_Response_v9; // FIXME: Change to v10
+
+typedef struct __attribute__ ((__packed__)) {
+    int             status;     /* A RIL_DataCallFailCause, 0 which is PDP_FAIL_NONE if no error */
+    int             suggestedRetryTime; /* If status != 0, this fields indicates the suggested retry
+                                           back-off timer value RIL wants to override the one
+                                           pre-configured in FW.
+                                           The unit is miliseconds.
+                                           The value < 0 means no value is suggested.
+                                           The value 0 means retry should be done ASAP.
+                                           The value of INT_MAX(0x7fffffff) means no retry. */
+    int             cid;        /* Context ID, uniquely identifies this call */
+    int             active;     /* 0=inactive, 1=active/physical link down, 2=active/physical link up */
+    char *          type;       /* One of the PDP_type values in TS 27.007 section 10.1.1.
+                                   For example, "IP", "IPV6", "IPV4V6", or "PPP". If status is
+                                   PDP_FAIL_ONLY_SINGLE_BEARER_ALLOWED this is the type supported
+                                   such as "IP" or "IPV6" */
+    char *          ifname;     /* The network interface name */
+    char *          addresses;  /* A space-delimited list of addresses with optional "/" prefix length,
+                                   e.g., "192.0.1.3" or "192.0.1.11/16 2001:db8::1/64".
+                                   May not be empty, typically 1 IPv4 or 1 IPv6 or
+                                   one of each. If the prefix length is absent the addresses
+                                   are assumed to be point to point with IPv4 having a prefix
+                                   length of 32 and IPv6 128. */
+    char *          dnses;      /* A space-delimited list of DNS server addresses,
+                                   e.g., "192.0.1.3" or "192.0.1.11 2001:db8::1".
+                                   May be empty. */
+    char *          gateways;   /* A space-delimited list of default gateway addresses,
+                                   e.g., "192.0.1.3" or "192.0.1.11 2001:db8::1".
+                                   May be empty in which case the addresses represent point
+                                   to point connections. */
+    char *          pcscf;      /* the Proxy Call State Control Function address
+                                   via PCO(Protocol Configuration Option) for IMS client. */
+    int             mtu;        /* MTU received from network
+                                   Value <= 0 means network has either not sent a value or
+                                   sent an invalid value */
+    char            extraByte;  /* Add an extra byte to increase the size of structure to
+                                   a prime number so that we never get an array of data call
+                                   responses which can be a multiple of both v9 and v9_CAF types */
+} RIL_Data_Call_Response_v9_CAF;
 
 typedef enum {
     RADIO_TECH_3GPP = 1, /* 3GPP Technologies - GSM, WCDMA */
