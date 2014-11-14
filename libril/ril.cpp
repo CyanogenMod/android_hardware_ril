@@ -2337,6 +2337,54 @@ static int responseDataCallListV6(Parcel &p, void *response, size_t responselen)
     return 0;
 }
 
+static int responseDataCallListV9CAF(Parcel &p, void *response, size_t responselen)
+{
+    if (response == NULL && responselen != 0) {
+        RLOGE("invalid response: NULL");
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+
+    // Write version
+    p.writeInt32(10);
+
+    int num = responselen / sizeof(RIL_Data_Call_Response_v9_CAF);
+    p.writeInt32(num);
+
+    RIL_Data_Call_Response_v9_CAF *p_cur = (RIL_Data_Call_Response_v9_CAF *) response;
+    startResponse;
+    int i;
+    for (i = 0; i < num; i++) {
+        p.writeInt32((int)p_cur[i].status);
+        p.writeInt32(p_cur[i].suggestedRetryTime);
+        p.writeInt32(p_cur[i].cid);
+        p.writeInt32(p_cur[i].active);
+        writeStringToParcel(p, p_cur[i].type);
+        writeStringToParcel(p, p_cur[i].ifname);
+        writeStringToParcel(p, p_cur[i].addresses);
+        writeStringToParcel(p, p_cur[i].dnses);
+        writeStringToParcel(p, p_cur[i].gateways);
+        writeStringToParcel(p, p_cur[i].pcscf);
+        p.writeInt32(p_cur[i].mtu);
+        appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s,mtu=%d],", printBuf,
+            p_cur[i].status,
+            p_cur[i].suggestedRetryTime,
+            p_cur[i].cid,
+            (p_cur[i].active==0)?"down":"up",
+            (char*)p_cur[i].type,
+            (char*)p_cur[i].ifname,
+            (char*)p_cur[i].addresses,
+            (char*)p_cur[i].dnses,
+            (char*)p_cur[i].gateways,
+            (char*)p_cur[i].pcscf,
+            p_cur[i].mtu);
+    }
+
+    removeLastChar;
+    closeResponse;
+
+    return 0;
+}
+
 static int responseDataCallList(Parcel &p, void *response, size_t responselen)
 {
     if (s_callbacks.version < 5) {
@@ -2352,6 +2400,11 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
         if (s_callbacks.version < 10) {
             RLOGD("responseDataCallList: v6");
             return responseDataCallListV6(p, response, responselen);
+        }
+
+        if (responselen % sizeof(RIL_Data_Call_Response_v9_CAF) == 0) {
+            RLOGD("responseDataCallList: v9CAF");
+            return responseDataCallListV9CAF(p, response, responselen);
         }
 
         if (responselen % sizeof(RIL_Data_Call_Response_v9) != 0) {
@@ -2380,6 +2433,8 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
             writeStringToParcel(p, p_cur[i].dnses);
             writeStringToParcel(p, p_cur[i].gateways);
             writeStringToParcel(p, p_cur[i].pcscf);
+            //Did not get MTU value in data call response. Send value=0 to framework
+            p.writeInt32(0);
             appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s],", printBuf,
                 p_cur[i].status,
                 p_cur[i].suggestedRetryTime,
