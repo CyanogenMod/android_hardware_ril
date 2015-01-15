@@ -38,6 +38,7 @@
 #define LIB_PATH_PROPERTY   "rild.libpath"
 #define LIB_ARGS_PROPERTY   "rild.libargs"
 #define MAX_LIB_ARGS        16
+#define MAX_CAP_NUM         ((CAP_LAST_CAP % 32) + 1)
 
 static void usage(const char *argv0)
 {
@@ -106,7 +107,7 @@ void switchUser() {
     header.version = _LINUX_CAPABILITY_VERSION_3;
     header.pid = 0;
 
-    struct __user_cap_data_struct data[2];
+    struct __user_cap_data_struct data[MAX_CAP_NUM];
     memset(&data, 0, sizeof(data));
 
     data[CAP_TO_INDEX(CAP_NET_ADMIN)].effective |= CAP_TO_MASK(CAP_NET_ADMIN);
@@ -114,6 +115,9 @@ void switchUser() {
 
     data[CAP_TO_INDEX(CAP_NET_RAW)].effective |= CAP_TO_MASK(CAP_NET_RAW);
     data[CAP_TO_INDEX(CAP_NET_RAW)].permitted |= CAP_TO_MASK(CAP_NET_RAW);
+
+    data[CAP_TO_INDEX(CAP_BLOCK_SUSPEND)].effective |= CAP_TO_MASK(CAP_BLOCK_SUSPEND);
+    data[CAP_TO_INDEX(CAP_BLOCK_SUSPEND)].permitted |= CAP_TO_MASK(CAP_BLOCK_SUSPEND);
 
     if (capset(&header, &data[0]) == -1) {
         RLOGE("capset failed: %s", strerror(errno));
