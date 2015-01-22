@@ -38,7 +38,7 @@
 #define LIB_PATH_PROPERTY   "rild.libpath"
 #define LIB_ARGS_PROPERTY   "rild.libargs"
 #define MAX_LIB_ARGS        16
-#define MAX_CAP_NUM         ((CAP_LAST_CAP % 32) + 1)
+#define MAX_CAP_NUM         ((CAP_LAST_CAP / 32) + 1)
 
 static void usage(const char *argv0)
 {
