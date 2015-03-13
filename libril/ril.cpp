@@ -277,6 +277,7 @@ static void dispatchNVWriteItem(Parcel &p, RequestInfo *pRI);
 static void dispatchUiccSubscripton(Parcel &p, RequestInfo *pRI);
 static void dispatchSimAuthentication(Parcel &p, RequestInfo *pRI);
 static void dispatchDataProfile(Parcel &p, RequestInfo *pRI);
+static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
 static int responseString(Parcel &p, void *response, size_t responselen);
@@ -305,6 +306,8 @@ static int responseHardwareConfig(Parcel &p, void *response, size_t responselen)
 static int responseSSData(Parcel &p, void *response, size_t responselen);
 static int responseDcRtInfo(Parcel &p, void *response, size_t responselen);
 static int responseGetDataCallProfile(Parcel &p, void *response, size_t responselen);
+static int responseRadioCapability(Parcel &p, void *response, size_t responselen);
+static int responseSSData(Parcel &p, void *response, size_t responselen);
 
 static int decodeVoiceRadioTechnology (RIL_RadioState radioState);
 static int decodeCdmaSubscriptionSource (RIL_RadioState radioState);
@@ -382,6 +385,26 @@ strdupReadString(Parcel &p) {
     s16 = p.readString16Inplace(&stringlen);
 
     return strndup16to8(s16, stringlen);
+}
+
+static status_t
+readStringFromParcelInplace(Parcel &p, char *str, size_t maxLen) {
+    size_t s16Len;
+    const char16_t *s16;
+
+    s16 = p.readString16Inplace(&s16Len);
+    if (s16 == NULL) {
+        return NO_MEMORY;
+    }
+    size_t strLen = strnlen16to8(s16, s16Len);
+    if ((strLen + 1) > maxLen) {
+        return NO_MEMORY;
+    }
+    if (strncpy16to8(str, s16, strLen) == NULL) {
+        return NO_MEMORY;
+    } else {
+        return NO_ERROR;
+    }
 }
 
 static void writeStringToParcel(Parcel &p, const char *s) {
@@ -470,8 +493,6 @@ processCommandBuffer(void *buffer, size_t buflen, RIL_SOCKET_ID socket_id) {
     // status checked at end
     status = p.readInt32(&request);
     status = p.readInt32 (&token);
-
-    RLOGD("SOCKET %s REQUEST: %s length:%d", rilSocketIdToString(socket_id), requestToString(request), buflen);
 
 #if (SIM_COUNT >= 2)
     if (socket_id == RIL_SOCKET_2) {
@@ -1963,6 +1984,67 @@ invalid:
     return;
 }
 
+static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI){
+    RIL_RadioCapability rc;
+    int32_t t;
+    status_t status;
+
+    memset (&rc, 0, sizeof(RIL_RadioCapability));
+
+    status = p.readInt32(&t);
+    rc.version = (int)t;
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    status = p.readInt32(&t);
+    rc.session= (int)t;
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    status = p.readInt32(&t);
+    rc.phase= (int)t;
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    status = p.readInt32(&t);
+    rc.rat = (int)t;
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    status = readStringFromParcelInplace(p, rc.logicalModemUuid, sizeof(rc.logicalModemUuid));
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    status = p.readInt32(&t);
+    rc.status = (int)t;
+
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    startRequest;
+    appendPrintBuf("%s [version:%d, session:%d, phase:%d, rat:%d, \
+            logicalModemUuid:%s, status:%d", printBuf, rc.version, rc.session
+            rc.phase, rc.rat, rc.logicalModemUuid, rc.session);
+
+    closeRequest;
+    printRequest(pRI->token, pRI->pCI->requestNumber);
+
+    CALL_ONREQUEST(pRI->pCI->requestNumber,
+                &rc,
+                sizeof(RIL_RadioCapability),
+                pRI, pRI->socket_id);
+    return;
+invalid:
+    invalidCommandBlock(pRI);
+    return;
+}
+
 static int
 blockingWrite(int fd, const void *buffer, size_t len) {
     size_t writeOffset = 0;
@@ -2337,20 +2419,26 @@ static int responseDataCallListV6(Parcel &p, void *response, size_t responselen)
     return 0;
 }
 
-static int responseDataCallListV9CAF(Parcel &p, void *response, size_t responselen)
+static int responseDataCallListV9(Parcel &p, void *response, size_t responselen)
 {
     if (response == NULL && responselen != 0) {
         RLOGE("invalid response: NULL");
         return RIL_ERRNO_INVALID_RESPONSE;
     }
 
+    if (responselen % sizeof(RIL_Data_Call_Response_v9) != 0) {
+        RLOGE("responseDataCallListV9: invalid response length %d expected multiple of %d",
+                (int)responselen, (int)sizeof(RIL_Data_Call_Response_v9));
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+
     // Write version
     p.writeInt32(10);
 
-    int num = responselen / sizeof(RIL_Data_Call_Response_v9_CAF);
+    int num = responselen / sizeof(RIL_Data_Call_Response_v9);
     p.writeInt32(num);
 
-    RIL_Data_Call_Response_v9_CAF *p_cur = (RIL_Data_Call_Response_v9_CAF *) response;
+    RIL_Data_Call_Response_v9 *p_cur = (RIL_Data_Call_Response_v9 *) response;
     startResponse;
     int i;
     for (i = 0; i < num; i++) {
@@ -2364,8 +2452,7 @@ static int responseDataCallListV9CAF(Parcel &p, void *response, size_t responsel
         writeStringToParcel(p, p_cur[i].dnses);
         writeStringToParcel(p, p_cur[i].gateways);
         writeStringToParcel(p, p_cur[i].pcscf);
-        p.writeInt32(p_cur[i].mtu);
-        appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s,mtu=%d],", printBuf,
+        appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s],", printBuf,
             p_cur[i].status,
             p_cur[i].suggestedRetryTime,
             p_cur[i].cid,
@@ -2375,51 +2462,43 @@ static int responseDataCallListV9CAF(Parcel &p, void *response, size_t responsel
             (char*)p_cur[i].addresses,
             (char*)p_cur[i].dnses,
             (char*)p_cur[i].gateways,
-            (char*)p_cur[i].pcscf,
-            p_cur[i].mtu);
+            (char*)p_cur[i].pcscf);
     }
-
     removeLastChar;
     closeResponse;
 
     return 0;
 }
 
+
 static int responseDataCallList(Parcel &p, void *response, size_t responselen)
 {
     if (s_callbacks.version < 5) {
         RLOGD("responseDataCallList: v4");
         return responseDataCallListV4(p, response, responselen);
+    } else if (s_callbacks.version < 10) {
+        return responseDataCallListV6(p, response, responselen);
+    } else if (responselen % sizeof(RIL_Data_Call_Response_v9) == 0) {
+        return responseDataCallListV9(p, response, responselen);
     } else {
         if (response == NULL && responselen != 0) {
             RLOGE("invalid response: NULL");
             return RIL_ERRNO_INVALID_RESPONSE;
         }
 
-        // Support v6 only in ril version < 10
-        if (s_callbacks.version < 10) {
-            RLOGD("responseDataCallList: v6");
-            return responseDataCallListV6(p, response, responselen);
-        }
-
-        if (responselen % sizeof(RIL_Data_Call_Response_v9_CAF) == 0) {
-            RLOGD("responseDataCallList: v9CAF");
-            return responseDataCallListV9CAF(p, response, responselen);
-        }
-
-        if (responselen % sizeof(RIL_Data_Call_Response_v9) != 0) {
-            RLOGE("responseDataCallList: invalid response length %d expected multiple of %d",
-                    (int)responselen, (int)sizeof(RIL_Data_Call_Response_v9));
+        if (responselen % sizeof(RIL_Data_Call_Response_v11) != 0) {
+            RLOGE("invalid response length %d expected multiple of %d",
+                    (int)responselen, (int)sizeof(RIL_Data_Call_Response_v11));
             return RIL_ERRNO_INVALID_RESPONSE;
         }
 
         // Write version
-        p.writeInt32(10);
+        p.writeInt32(11);
 
-        int num = responselen / sizeof(RIL_Data_Call_Response_v9);
+        int num = responselen / sizeof(RIL_Data_Call_Response_v11);
         p.writeInt32(num);
 
-        RIL_Data_Call_Response_v9 *p_cur = (RIL_Data_Call_Response_v9 *) response;
+        RIL_Data_Call_Response_v11 *p_cur = (RIL_Data_Call_Response_v11 *) response;
         startResponse;
         int i;
         for (i = 0; i < num; i++) {
@@ -2433,9 +2512,8 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
             writeStringToParcel(p, p_cur[i].dnses);
             writeStringToParcel(p, p_cur[i].gateways);
             writeStringToParcel(p, p_cur[i].pcscf);
-            //Did not get MTU value in data call response. Send value=0 to framework
-            p.writeInt32(0);
-            appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s],", printBuf,
+            p.writeInt32(p_cur[i].mtu);
+            appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s,mtu=%d],", printBuf,
                 p_cur[i].status,
                 p_cur[i].suggestedRetryTime,
                 p_cur[i].cid,
@@ -2445,7 +2523,8 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
                 (char*)p_cur[i].addresses,
                 (char*)p_cur[i].dnses,
                 (char*)p_cur[i].gateways,
-                (char*)p_cur[i].pcscf);
+                (char*)p_cur[i].pcscf,
+                p_cur[i].mtu);
         }
         removeLastChar;
         closeResponse;
@@ -3201,12 +3280,47 @@ static int responseHardwareConfig(Parcel &p, void *response, size_t responselen)
    return 0;
 }
 
+static int responseRadioCapability(Parcel &p, void *response, size_t responselen) {
+    if (response == NULL) {
+        RLOGE("invalid response: NULL");
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+
+    if (responselen != sizeof (RIL_RadioCapability) ) {
+        RLOGE("invalid response length was %d expected %d",
+                (int)responselen, (int)sizeof (RIL_SIM_IO_Response));
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+
+    RIL_RadioCapability *p_cur = (RIL_RadioCapability *) response;
+    p.writeInt32(p_cur->version);
+    p.writeInt32(p_cur->session);
+    p.writeInt32(p_cur->phase);
+    p.writeInt32(p_cur->rat);
+    writeStringToParcel(p, p_cur->logicalModemUuid);
+    p.writeInt32(p_cur->status);
+
+    startResponse;
+    appendPrintBuf("%s[version=%d,session=%d,phase=%d,\
+            rat=%s,logicalModemUuid=%s,status=%d]",
+            printBuf,
+            p_cur->version,
+            p_cur->session,
+            p_cur->phase,
+            p_cur->rat,
+            p_cur->logicalModemUuid,
+            p_cur->status);
+    closeResponse;
+    return 0;
+}
+
 static int responseSSData(Parcel &p, void *response, size_t responselen) {
     RLOGD("In responseSSData");
     int num;
 
     if (response == NULL && responselen != 0) {
-        RLOGE("invalid response: NULL");
+        RLOGE("invalid response length was %d expected %d",
+                (int)responselen, (int)sizeof (RIL_SIM_IO_Response));
         return RIL_ERRNO_INVALID_RESPONSE;
     }
 
@@ -4856,6 +4970,8 @@ requestToString(int request) {
         case RIL_REQUEST_SIM_CLOSE_CHANNEL: return "SIM_CLOSE_CHANNEL";
         case RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL: return "SIM_TRANSMIT_APDU_CHANNEL";
         case RIL_REQUEST_SIM_GET_ATR: return "SIM_GET_ATR";
+        case RIL_REQUEST_GET_RADIO_CAPABILITY: return "RIL_REQUEST_GET_RADIO_CAPABILITY";
+        case RIL_REQUEST_SET_RADIO_CAPABILITY: return "RIL_REQUEST_SET_RADIO_CAPABILITY";
         case RIL_REQUEST_SET_UICC_SUBSCRIPTION: return "SET_UICC_SUBSCRIPTION";
         case RIL_REQUEST_ALLOW_DATA: return "ALLOW_DATA";
         case RIL_REQUEST_GET_HARDWARE_CONFIG: return "GET_HARDWARE_CONFIG";
@@ -4907,6 +5023,7 @@ requestToString(int request) {
         case RIL_UNSOL_HARDWARE_CONFIG_CHANGED: return "HARDWARE_CONFIG_CHANGED";
         case RIL_UNSOL_DC_RT_INFO_CHANGED: return "UNSOL_DC_RT_INFO_CHANGED";
         case RIL_REQUEST_SHUTDOWN: return "SHUTDOWN";
+        case RIL_UNSOL_RADIO_CAPABILITY: return "RIL_UNSOL_RADIO_CAPABILITY";
         default: return "<unknown request>";
     }
 }

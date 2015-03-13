@@ -452,8 +452,8 @@ static void requestOrSendDataCallList(RIL_Token *t)
          p_cur = p_cur->p_next)
         n++;
 
-    RIL_Data_Call_Response_v9_CAF *responses =
-        alloca(n * sizeof(RIL_Data_Call_Response_v9_CAF));
+    RIL_Data_Call_Response_v11 *responses =
+        alloca(n * sizeof(RIL_Data_Call_Response_v11));
 
     int i;
     for (i = 0; i < n; i++) {
@@ -470,7 +470,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
         responses[i].mtu = 0;
     }
 
-    RIL_Data_Call_Response_v9_CAF *response = responses;
+    RIL_Data_Call_Response_v11 *response = responses;
     for (p_cur = p_response->p_intermediates; p_cur != NULL;
          p_cur = p_cur->p_next) {
         char *line = p_cur->line;
@@ -603,11 +603,11 @@ static void requestOrSendDataCallList(RIL_Token *t)
 
     if (t != NULL)
         RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
-                              n * sizeof(RIL_Data_Call_Response_v9_CAF));
+                              n * sizeof(RIL_Data_Call_Response_v11));
     else
         RIL_onUnsolicitedResponse(RIL_UNSOL_DATA_CALL_LIST_CHANGED,
                                   responses,
-                                  n * sizeof(RIL_Data_Call_Response_v9_CAF));
+                                  n * sizeof(RIL_Data_Call_Response_v11));
 
     return;
 
