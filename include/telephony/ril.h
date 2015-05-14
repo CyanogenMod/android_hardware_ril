@@ -67,7 +67,10 @@ extern "C" {
  * RIL_VERSION = 13 : This version includes new wakelock semantics and as the first
  *                    strongly versioned version it enforces structure use.
  */
-#ifdef USE_RIL_VERSION_11
+#if defined(USE_RIL_VERSION_10)
+#define RIL_VERSION 10
+#define LAST_IMPRECISE_RIL_VERSION 10
+#elif defined(USE_RIL_VERSION_11)
 #define RIL_VERSION 11
 #define LAST_IMPRECISE_RIL_VERSION 11
 #else
