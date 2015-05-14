@@ -2419,6 +2419,7 @@ static int responseDataCallListV6(Parcel &p, void *response, size_t responselen)
     return 0;
 }
 
+#if (RIL_VERSION == 11)
 static int responseDataCallListV9(Parcel &p, void *response, size_t responselen)
 {
     if (response == NULL && responselen != 0) {
@@ -2469,23 +2470,46 @@ static int responseDataCallListV9(Parcel &p, void *response, size_t responselen)
 
     return 0;
 }
-
+#endif
 
 static int responseDataCallList(Parcel &p, void *response, size_t responselen)
 {
     if (s_callbacks.version < 5) {
         RLOGD("responseDataCallList: v4");
         return responseDataCallListV4(p, response, responselen);
+#if (RIL_VERSION == 11)
     } else if (s_callbacks.version < 10) {
         return responseDataCallListV6(p, response, responselen);
     } else if (responselen % sizeof(RIL_Data_Call_Response_v9) == 0) {
         return responseDataCallListV9(p, response, responselen);
+#endif
     } else {
         if (response == NULL && responselen != 0) {
             RLOGE("invalid response: NULL");
             return RIL_ERRNO_INVALID_RESPONSE;
         }
 
+#if (RIL_VERSION == 10)
+        // Support v6 or v9 with new rils
+        if (responselen % sizeof(RIL_Data_Call_Response_v6) == 0) {
+            RLOGD("responseDataCallList: v6");
+            return responseDataCallListV6(p, response, responselen);
+        }
+
+        if (responselen % sizeof(RIL_Data_Call_Response_v9) != 0) {
+            RLOGE("responseDataCallList: invalid response length %d expected multiple of %d",
+                    (int)responselen, (int)sizeof(RIL_Data_Call_Response_v9));
+            return RIL_ERRNO_INVALID_RESPONSE;
+        }
+
+        // Write version
+        p.writeInt32(10);
+
+        int num = responselen / sizeof(RIL_Data_Call_Response_v9);
+        p.writeInt32(num);
+
+        RIL_Data_Call_Response_v9 *p_cur = (RIL_Data_Call_Response_v9 *) response;
+#else
         if (responselen % sizeof(RIL_Data_Call_Response_v11) != 0) {
             RLOGE("invalid response length %d expected multiple of %d",
                     (int)responselen, (int)sizeof(RIL_Data_Call_Response_v11));
@@ -2499,6 +2523,7 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
         p.writeInt32(num);
 
         RIL_Data_Call_Response_v11 *p_cur = (RIL_Data_Call_Response_v11 *) response;
+#endif
         startResponse;
         int i;
         for (i = 0; i < num; i++) {
@@ -2512,6 +2537,19 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
             writeStringToParcel(p, p_cur[i].dnses);
             writeStringToParcel(p, p_cur[i].gateways);
             writeStringToParcel(p, p_cur[i].pcscf);
+#if (RIL_VERSION == 10)
+            appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s],", printBuf,
+                p_cur[i].status,
+                p_cur[i].suggestedRetryTime,
+                p_cur[i].cid,
+                (p_cur[i].active==0)?"down":"up",
+                (char*)p_cur[i].type,
+                (char*)p_cur[i].ifname,
+                (char*)p_cur[i].addresses,
+                (char*)p_cur[i].dnses,
+                (char*)p_cur[i].gateways,
+                (char*)p_cur[i].pcscf);
+#else
             p.writeInt32(p_cur[i].mtu);
             appendPrintBuf("%s[status=%d,retry=%d,cid=%d,%s,%s,%s,%s,%s,%s,%s,mtu=%d],", printBuf,
                 p_cur[i].status,
@@ -2525,6 +2563,7 @@ static int responseDataCallList(Parcel &p, void *response, size_t responselen)
                 (char*)p_cur[i].gateways,
                 (char*)p_cur[i].pcscf,
                 p_cur[i].mtu);
+#endif
         }
         removeLastChar;
         closeResponse;
