@@ -452,8 +452,13 @@ static void requestOrSendDataCallList(RIL_Token *t)
          p_cur = p_cur->p_next)
         n++;
 
+#if (RIL_VERSION == 10)
+    RIL_Data_Call_Response_v9 *responses =
+        alloca(n * sizeof(RIL_Data_Call_Response_v9));
+#else
     RIL_Data_Call_Response_v11 *responses =
         alloca(n * sizeof(RIL_Data_Call_Response_v11));
+#endif
 
     int i;
     for (i = 0; i < n; i++) {
@@ -467,10 +472,16 @@ static void requestOrSendDataCallList(RIL_Token *t)
         responses[i].dnses = "";
         responses[i].gateways = "";
         responses[i].pcscf = "";
+#if (RIL_VERSION == 11)
         responses[i].mtu = 0;
+#endif
     }
 
+#if (RIL_VERSION == 10)
+    RIL_Data_Call_Response_v9 *response = responses;
+#else
     RIL_Data_Call_Response_v11 *response = responses;
+#endif
     for (p_cur = p_response->p_intermediates; p_cur != NULL;
          p_cur = p_cur->p_next) {
         char *line = p_cur->line;
@@ -587,7 +598,9 @@ static void requestOrSendDataCallList(RIL_Token *t)
 
                 /* There is only on gateway in the emulator */
                 responses[i].gateways = "10.0.2.2";
+#if (RIL_VERSION == 11)
                 responses[i].mtu = DEFAULT_MTU;
+#endif
             }
             else {
                 /* I don't know where we are, so use the public Google DNS
@@ -601,6 +614,15 @@ static void requestOrSendDataCallList(RIL_Token *t)
 
     at_response_free(p_response);
 
+#if (RIL_VERSION == 10)
+    if (t != NULL)
+         RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
+                              n * sizeof(RIL_Data_Call_Response_v9));
+    else
+         RIL_onUnsolicitedResponse(RIL_UNSOL_DATA_CALL_LIST_CHANGED,
+                                   responses,
+                                   n * sizeof(RIL_Data_Call_Response_v9));
+#else
     if (t != NULL)
         RIL_onRequestComplete(*t, RIL_E_SUCCESS, responses,
                               n * sizeof(RIL_Data_Call_Response_v11));
@@ -608,7 +630,7 @@ static void requestOrSendDataCallList(RIL_Token *t)
         RIL_onUnsolicitedResponse(RIL_UNSOL_DATA_CALL_LIST_CHANGED,
                                   responses,
                                   n * sizeof(RIL_Data_Call_Response_v11));
-
+#endif
     return;
 
 error:
