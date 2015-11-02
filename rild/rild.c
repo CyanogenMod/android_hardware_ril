@@ -52,8 +52,10 @@ extern char rild[MAX_SOCKET_NAME_LENGTH];
 
 extern void RIL_register (const RIL_RadioFunctions *callbacks);
 
+#ifndef RIL_PRE_M_BLOBS
 extern void RIL_register_socket (RIL_RadioFunctions *(*rilUimInit)
         (const struct RIL_Env *, int, char **), RIL_SOCKET_TYPE socketType, int argc, char **argv);
+#endif
 
 extern void RIL_onRequestComplete(RIL_Token t, RIL_Errno e,
         void *response, size_t responselen);
@@ -353,12 +355,14 @@ OpenLib:
 
     RLOGD("RIL_Init RIL_register completed");
 
+#ifndef RIL_PRE_M_BLOBS
     if (rilUimInit) {
         RLOGD("RIL_register_socket started");
         RIL_register_socket(rilUimInit, RIL_SAP_SOCKET, argc, rilArgv);
     }
 
     RLOGD("RIL_register_socket completed");
+#endif
 
 done:
 
