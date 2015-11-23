@@ -271,6 +271,7 @@ static void dispatchUiccSubscripton(Parcel &p, RequestInfo *pRI);
 static void dispatchSimAuthentication(Parcel &p, RequestInfo *pRI);
 static void dispatchDataProfile(Parcel &p, RequestInfo *pRI);
 static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI);
+static void dispatchOpenChannelWithP2(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseFailCause(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
@@ -2044,6 +2045,57 @@ static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI){
                 &rc,
                 sizeof(RIL_RadioCapability),
                 pRI, pRI->socket_id);
+    return;
+invalid:
+    invalidCommandBlock(pRI);
+    return;
+}
+
+/**
+ * Callee expects const RIL_CafOpenChannelParams *
+ * Payload is:
+ * byte p2
+ * char * aidPtr
+ */
+static void dispatchOpenChannelWithP2 (Parcel &p, RequestInfo *pRI) {
+    RIL_CafOpenChannelParams openChannel;
+    status_t status;
+    uint8_t p2;
+
+#if VDBG
+    RLOGD("dispatchOpenChannelWithP2");
+#endif
+    memset (&openChannel, 0, sizeof(RIL_CafOpenChannelParams));
+
+    status = p.read(&p2, sizeof(p2));
+    openChannel.p2 = (uint8_t) p2;
+
+    openChannel.aidPtr = strdupReadString(p);
+    if (status != NO_ERROR || openChannel.aidPtr == NULL) {
+        goto invalid;
+    }
+
+    startRequest;
+    appendPrintBuf("%s[p2:%d, aid:%s]", printBuf, openChannel.p2, openChannel.aidPtr);
+
+    closeRequest;
+    printRequest(pRI->token, pRI->pCI->requestNumber);
+
+    CALL_ONREQUEST(pRI->pCI->requestNumber,
+                &openChannel,
+                sizeof(openChannel),
+                pRI, pRI->socket_id);
+
+#ifdef MEMSET_FREED
+    memsetString(openChannel.aidPtr);
+#endif
+
+    free(openChannel.aidPtr);
+
+#ifdef MEMSET_FREED
+    memset(&openChannel, 0, sizeof(openChannel));
+#endif
+
     return;
 invalid:
     invalidCommandBlock(pRI);
@@ -5124,6 +5176,7 @@ requestToString(int request) {
         case RIL_REQUEST_IMS_SEND_SMS: return "IMS_SEND_SMS";
         case RIL_REQUEST_SIM_TRANSMIT_APDU_BASIC: return "SIM_TRANSMIT_APDU_BASIC";
         case RIL_REQUEST_SIM_OPEN_CHANNEL: return "SIM_OPEN_CHANNEL";
+        case RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2: return "CAF_SIM_OPEN_CHANNEL_WITH_P2";
         case RIL_REQUEST_SIM_CLOSE_CHANNEL: return "SIM_CLOSE_CHANNEL";
         case RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL: return "SIM_TRANSMIT_APDU_CHANNEL";
         case RIL_REQUEST_GET_RADIO_CAPABILITY: return "RIL_REQUEST_GET_RADIO_CAPABILITY";
