@@ -2113,6 +2113,10 @@ onRequest (int request, void *data, size_t datalen, RIL_Token t)
                it will call GET_CURRENT_CALLS and determine success that way */
             RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
             break;
+        case RIL_REQUEST_ALLOW_DATA:
+            /* Just return success. */
+            RIL_onRequestComplete(t, RIL_E_SUCCESS, NULL, 0);
+            break;
 
         case RIL_REQUEST_SEPARATE_CONNECTION:
             {
