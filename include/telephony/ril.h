@@ -728,6 +728,8 @@ typedef enum {
     PDP_FAIL_TETHERED_CALL_ACTIVE = -6,   /* data call was disconnected by modem because tethered
                                              mode was up on same APN/data profile - no retry until
                                              tethered call is off */
+    PDP_FAIL_IPV4_CALL_THROTTLED = -7,
+    PDP_FAIL_IPV6_CALL_THROTTLED = -8,
 
     PDP_FAIL_ERROR_UNSPECIFIED = 0xffff,  /* retry silently */
 } RIL_DataCallFailCause;
@@ -1499,6 +1501,12 @@ typedef struct {
   /* period (in ms) for which Rx is active */
   uint32_t rx_mode_time_ms;
 } RIL_ActivityStatsInfo;
+
+typedef struct {
+    uint8_t p2; /* P2 parameter */
+    char * aidPtr; /* AID value, See ETSI 102.221 and 101.220*/
+
+} RIL_CafOpenChannelParams;
 
 /**
  * RIL_REQUEST_GET_SIM_STATUS
@@ -4546,8 +4554,30 @@ typedef struct {
  */
 #define RIL_REQUEST_SIM_GET_ATR 136
 
-/***********************************************************************/
+/**
+ * RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2
+ *
+ * Open a new logical channel and select the given application. This command
+ * reflects TS 27.007 "open logical channel" operation (+CCHO). This request
+ * also specifies the P2 parameter.
+ *
+ * "data" is a const RIL_CafOpenChannelParam *
+ *
+ * "response" is int *
+ * ((int *)data)[0] contains the session id of the logical channel.
+ * ((int *)data)[1] onwards may optionally contain the select response for the
+ *     open channel command with one byte per integer.
+ *
+ * Valid errors:
+ *  SUCCESS
+ *  RADIO_NOT_AVAILABLE
+ *  GENERIC_FAILURE
+ *  MISSING_RESOURCE
+ *  NO_SUCH_ELEMENT
+ */
+#define RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2 137
 
+/***********************************************************************/
 
 #define RIL_UNSOL_RESPONSE_BASE 1000
 
