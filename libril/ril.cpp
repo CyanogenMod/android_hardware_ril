@@ -283,6 +283,7 @@ static void dispatchSimAuthentication(Parcel &p, RequestInfo *pRI);
 static void dispatchDataProfile(Parcel &p, RequestInfo *pRI);
 static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI);
 static void dispatchOpenChannelWithP2(Parcel &p, RequestInfo *pRI);
+static void dispatchAdnRecord(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseFailCause(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
@@ -315,7 +316,7 @@ static int responseSSData(Parcel &p, void *response, size_t responselen);
 static int responseLceStatus(Parcel &p, void *response, size_t responselen);
 static int responseLceData(Parcel &p, void *response, size_t responselen);
 static int responseActivityData(Parcel &p, void *response, size_t responselen);
-
+static int responseAdnRecords(Parcel &p, void *response, size_t responselen);
 static int decodeVoiceRadioTechnology (RIL_RadioState radioState);
 static int decodeCdmaSubscriptionSource (RIL_RadioState radioState);
 static RIL_RadioState processRadioState(RIL_RadioState newRadioState);
@@ -2187,6 +2188,92 @@ invalid:
     return;
 }
 
+static void dispatchAdnRecord(Parcel &p, RequestInfo *pRI) {
+    int32_t  t;
+    status_t status;
+    RIL_AdnRecordInfo adnInfo;
+
+    status = p.readInt32(&t);
+    adnInfo.record_id = (int) t;
+
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    adnInfo.name = strdupReadString(p);
+    adnInfo.number = strdupReadString(p);
+
+    startRequest;
+    appendPrintBuf("%srecordIndex=%d, name=%s, number=%s, ", printBuf,
+                    (int)adnInfo.record_id, adnInfo.name, adnInfo.number);
+
+    status = p.readInt32(&t);
+    adnInfo.email_elements= (int) t;
+
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    appendPrintBuf("%semailElements=%d, ", printBuf, adnInfo.email_elements);
+
+    for (int i = 0 ; i < adnInfo.email_elements ; i++) {
+        adnInfo.email[i] = strdupReadString(p);
+        appendPrintBuf("%snvwi.itemID=%d, email=%s, ", printBuf, i, adnInfo.email[i]);
+    }
+
+    status = p.readInt32(&t);
+    adnInfo.anr_elements= (int) t;
+
+    if (status != NO_ERROR) {
+        goto invalid;
+    }
+
+    appendPrintBuf("%sanrElements=%d, ", printBuf, adnInfo.anr_elements);
+
+    for (int i = 0 ; i < adnInfo.anr_elements ; i++) {
+        adnInfo.ad_number[i] = strdupReadString(p);
+        appendPrintBuf("%snvwi.itemID=%d, anr=%s, ", printBuf, i, adnInfo.ad_number[i]);
+    }
+
+    closeRequest;
+
+    printRequest(pRI->token, pRI->pCI->requestNumber);
+
+    CALL_ONREQUEST(pRI->pCI->requestNumber, &adnInfo, sizeof(adnInfo), pRI, pRI->socket_id);
+
+#ifdef MEMSET_FREED
+    memsetString(adnInfo.name);
+    memsetString(adnInfo.number);
+#endif
+
+    free(adnInfo.name);
+    free(adnInfo.number);
+
+    for (int i = 0 ; i < adnInfo.email_elements ; i++) {
+#ifdef MEMSET_FREED
+        memsetString (adnInfo.email[i]);
+#endif
+        free(adnInfo.email[i]);
+    }
+
+    for (int i = 0 ; i < adnInfo.anr_elements ; i++) {
+#ifdef MEMSET_FREED
+        memsetString (adnInfo.ad_number[i]);
+#endif
+        free(adnInfo.ad_number[i]);
+    }
+
+#ifdef MEMSET_FREED
+    memset(&adnInfo, 0, sizeof(adnInfo));
+#endif
+
+    return;
+
+invalid:
+    invalidCommandBlock(pRI);
+    return;
+}
+
 static int
 blockingWrite(int fd, const void *buffer, size_t len) {
     size_t writeOffset = 0;
@@ -4026,6 +4113,54 @@ static int responseActivityData(Parcel &p, void *response, size_t responselen) {
   return 0;
 }
 
+static void sendAdnRecordInfo(Parcel &p, int num_records, RIL_AdnRecordInfo recordInfo[]) {
+        startResponse;
+        for (int i = 0; i < num_records; i++) {
+            p.writeInt32(recordInfo[i].record_id);
+            writeStringToParcel(p, (const char*)(recordInfo[i].name));
+            writeStringToParcel(p, (const char*)(recordInfo[i].number));
+
+            p.writeInt32(recordInfo[i].email_elements);
+            for (int j = 0; j < recordInfo[i].email_elements; j++) {
+                writeStringToParcel(p, (const char*)(recordInfo[i].email[j]));
+            }
+            p.writeInt32(recordInfo[i].anr_elements);
+            for (int j = 0; j < recordInfo[i].anr_elements; j++) {
+                writeStringToParcel(p, (const char*)(recordInfo[i].ad_number[j]));
+            }
+
+            appendPrintBuf("%s[record_id=%d,number=%s,anr_elements=%d,email_elements=%d],",
+                    printBuf,
+                    recordInfo[i].record_id,
+                    recordInfo[i].name,
+                    recordInfo[i].number,
+                    recordInfo[i].email_elements,
+                    recordInfo[i].anr_elements);
+        }
+        closeResponse;
+}
+
+static int responseAdnRecords(Parcel &p, void *response, size_t responselen) {
+    int i;
+
+    if (response == NULL && responselen != 0) {
+        RLOGE("invalid response: NULL");
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+
+    if (responselen == sizeof (RIL_AdnRecord_v1)) {
+        RIL_AdnRecord_v1 *p_cur = ((RIL_AdnRecord_v1 *) response);
+
+        p.writeInt32(p_cur->record_elements);
+
+        sendAdnRecordInfo(p, p_cur->record_elements, p_cur->adn_record_info);
+    } else {
+        RLOGE("responseAdnRecords: A RIL_AdnRecord_v1 expected\n");
+        return RIL_ERRNO_INVALID_RESPONSE;
+    }
+
+    return 0;
+}
 /**
  * A write on the wakeup fd is done just to pop us out of select()
  * We empty the buffer here and then ril_event will reset the timers on the
@@ -5655,6 +5790,8 @@ requestToString(int request) {
         case RIL_REQUEST_GET_DC_RT_INFO: return "GET_DC_RT_INFO";
         case RIL_REQUEST_SET_DC_RT_INFO_RATE: return "SET_DC_RT_INFO_RATE";
         case RIL_REQUEST_SET_DATA_PROFILE: return "SET_DATA_PROFILE";
+        case RIL_REQUEST_GET_ADN_RECORD: return "RIL_REQUEST_GET_ADN_RECORD";
+        case RIL_REQUEST_UPDATE_ADN_RECORD: return "RIL_REQUEST_UPDATE_ADN_RECORD";
         case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: return "UNSOL_RESPONSE_RADIO_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED: return "UNSOL_RESPONSE_CALL_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED: return "UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED";
@@ -5700,6 +5837,8 @@ requestToString(int request) {
         case RIL_REQUEST_SHUTDOWN: return "SHUTDOWN";
         case RIL_UNSOL_RADIO_CAPABILITY: return "RIL_UNSOL_RADIO_CAPABILITY";
         case RIL_RESPONSE_ACKNOWLEDGEMENT: return "RIL_RESPONSE_ACKNOWLEDGEMENT";
+        case RIL_UNSOL_RESPONSE_ADN_INIT_DONE: return "RIL_UNSOL_RESPONSE_ADN_INIT_DONE";
+        case RIL_UNSOL_RESPONSE_ADN_RECORDS: return "RIL_UNSOL_RESPONSE_ADN_RECORDS";
         default: return "<unknown request>";
     }
 }

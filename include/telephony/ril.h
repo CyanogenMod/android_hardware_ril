@@ -1704,6 +1704,25 @@ typedef struct {
 
 } RIL_CafOpenChannelParams;
 
+#define RIL_NUM_ADN_RECORDS      10
+#define RIL_MAX_NUM_AD_COUNT     4
+#define RIL_MAX_NUM_EMAIL_COUNT  2
+
+typedef struct {
+    int       record_id;
+    char*     name;
+    char*     number;
+    int       email_elements;
+    char*     email[RIL_MAX_NUM_EMAIL_COUNT];
+    int       anr_elements;
+    char*     ad_number[RIL_MAX_NUM_AD_COUNT];
+} RIL_AdnRecordInfo;
+
+typedef struct {
+    int               record_elements;
+    RIL_AdnRecordInfo adn_record_info[RIL_NUM_ADN_RECORDS];
+} RIL_AdnRecord_v1;
+
 /**
  * RIL_REQUEST_GET_SIM_STATUS
  *
@@ -5138,6 +5157,40 @@ typedef struct {
  */
 #define RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2 137
 
+/**
+ * RIL_REQUEST_GET_ADN_RECORD
+ *
+ * Requests ADN count record of the SIM card
+ *
+ * "data" is NULL
+ *
+ * "response" is const int *
+ * ((int *)data)[0] is the max adn count.
+ * ((int *)data)[1] is the valid adn count.
+ * ((int *)data)[2] is the max email count.
+ * ((int *)data)[3] is the max anr count.
+ *
+ * Valid errors:
+ *  SUCCESS
+ *  GENERIC_FAILURE
+ */
+#define RIL_REQUEST_GET_ADN_RECORD 138
+
+/**
+ * RIL_REQUEST_UPDATE_ADN_RECORD
+ *
+ * Requests ADN count of the the SIM card
+ *
+ * "data" is RIL_AdnRecordInfo *
+ *
+ * "response" is const int *
+ *
+ * Valid errors:
+ *  Must never fail
+ */
+#define RIL_REQUEST_UPDATE_ADN_RECORD 139
+
+
 /***********************************************************************/
 
 /**
@@ -5752,6 +5805,26 @@ typedef struct {
  *
  */
 #define RIL_UNSOL_LCEDATA_RECV 1045
+
+/**
+ * RIL_UNSOL_RESPONSE_ADN_INIT_DONE
+ *
+ * Called when the ADN has already init done,
+ *
+ * "data" is NULL.
+ *
+ */
+#define RIL_UNSOL_RESPONSE_ADN_INIT_DONE 1046
+
+/**
+ * RIL_UNSOL_RESPONSE_ADN_RECORDS
+ *
+ * Called when there is a group of ADN record report,
+ *
+ * "data" is the RIL_ADN structure.
+ *
+ */
+#define RIL_UNSOL_RESPONSE_ADN_RECORDS 1047
 
 /***********************************************************************/
 
