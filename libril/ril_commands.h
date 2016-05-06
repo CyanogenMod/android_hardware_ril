@@ -152,3 +152,5 @@
     {RIL_REQUEST_GET_ACTIVITY_INFO, dispatchVoid, responseActivityData},
     {RIL_REQUEST_SIM_GET_ATR, dispatchInts, responseString},
     {RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2, dispatchOpenChannelWithP2, responseInts},
+    {0, NULL, NULL},
+    {RIL_REQUEST_SET_MAX_TRANSMIT_POWER, dispatchSetMaxTransmitPower, responseVoid},
