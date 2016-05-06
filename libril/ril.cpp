@@ -272,6 +272,7 @@ static void dispatchSimAuthentication(Parcel &p, RequestInfo *pRI);
 static void dispatchDataProfile(Parcel &p, RequestInfo *pRI);
 static void dispatchRadioCapability(Parcel &p, RequestInfo *pRI);
 static void dispatchOpenChannelWithP2(Parcel &p, RequestInfo *pRI);
+static void dispatchSetMaxTransmitPower(Parcel &p, RequestInfo *pRI);
 static int responseInts(Parcel &p, void *response, size_t responselen);
 static int responseFailCause(Parcel &p, void *response, size_t responselen);
 static int responseStrings(Parcel &p, void *response, size_t responselen);
@@ -516,7 +517,8 @@ processCommandBuffer(void *buffer, size_t buflen, RIL_SOCKET_ID socket_id) {
 
     if (request < 1 || request >= (int32_t)NUM_ELEMS(s_commands)) {
         Parcel pErr;
-        RLOGE("unsupported request code %d token %d", request, token);
+        RLOGE("unsupported request code %d token %d num_elem %d", request, token,
+            (int32_t)NUM_ELEMS(s_commands));
         // FIXME this should perhaps return a response
         pErr.writeInt32 (RESPONSE_SOLICITED);
         pErr.writeInt32 (token);
@@ -2095,6 +2097,38 @@ static void dispatchOpenChannelWithP2 (Parcel &p, RequestInfo *pRI) {
 #ifdef MEMSET_FREED
     memset(&openChannel, 0, sizeof(openChannel));
 #endif
+
+    return;
+invalid:
+    invalidCommandBlock(pRI);
+    return;
+}
+
+
+static void dispatchSetMaxTransmitPower(Parcel &p, RequestInfo *pRI) {
+    rf_control_state state;
+    int32_t t;
+    status_t status;
+
+    memset(&state, 0, sizeof(state));
+    status = p.readInt32(&t);
+    if (status != NO_ERROR) {
+        RLOGE("dispatchSetMaxTransmitPower ERROR");
+        goto invalid;
+    }
+    state.state = (int)t;
+    RLOGI("dispatchSetMaxTransmitPower: %d\n", state.state);
+
+    startRequest;
+    appendPrintBuf("%sstate.state=%d", printBuf, state.state);
+    closeRequest;
+    printRequest(pRI->token, pRI->pCI->requestNumber);
+
+    s_callbacks.onRequest(pRI->pCI->requestNumber, &state, sizeof(state), pRI);
+
+    #ifdef MEMSET_FREED
+    memset(&state, 0, sizeof(state));
+    #endif
 
     return;
 invalid:
@@ -5228,6 +5262,7 @@ requestToString(int request) {
         case RIL_REQUEST_GET_DC_RT_INFO: return "GET_DC_RT_INFO";
         case RIL_REQUEST_SET_DC_RT_INFO_RATE: return "SET_DC_RT_INFO_RATE";
         case RIL_REQUEST_SET_DATA_PROFILE: return "SET_DATA_PROFILE";
+        case RIL_REQUEST_SET_MAX_TRANSMIT_POWER: return "RIL_REQUEST_SET_MAX_TRANSMIT_POWER";
         case RIL_UNSOL_RESPONSE_RADIO_STATE_CHANGED: return "UNSOL_RESPONSE_RADIO_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_CALL_STATE_CHANGED: return "UNSOL_RESPONSE_CALL_STATE_CHANGED";
         case RIL_UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED: return "UNSOL_RESPONSE_VOICE_NETWORK_STATE_CHANGED";
