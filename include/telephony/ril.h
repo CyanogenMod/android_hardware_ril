@@ -67,8 +67,13 @@ extern "C" {
  * RIL_VERSION = 13 : This version includes new wakelock semantics and as the first
  *                    strongly versioned version it enforces structure use.
  */
+#ifdef USE_RIL_VERSION_11
+#define RIL_VERSION 11
+#define LAST_IMPRECISE_RIL_VERSION 11
+#else
 #define RIL_VERSION 12
 #define LAST_IMPRECISE_RIL_VERSION 12 // Better self-documented name
+#endif
 #define RIL_VERSION_MIN 6 /* Minimum RIL_VERSION supported */
 
 #define CDMA_ALPHA_INFO_BUFFER_LENGTH 64
