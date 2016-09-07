@@ -1728,6 +1728,11 @@ static void requestSetupDataCall(void *data, size_t datalen, RIL_Token t)
             pdp_type = "IP";
         }
 
+        if (!strcmp("IPV6", pdp_type)) {
+            RLOGW("IPV6 pdp requested, but reference ril only supports IPV4, downgrading.");
+            pdp_type = "IP";
+        }
+
         asprintf(&cmd, "AT+CGDCONT=1,\"%s\",\"%s\",,0,0", pdp_type, apn);
         //FIXME check for error here
         err = at_send_command(cmd, NULL);
