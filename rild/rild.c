@@ -60,7 +60,9 @@ extern void RIL_register_socket (RIL_RadioFunctions *(*rilUimInit)
 extern void RIL_onRequestComplete(RIL_Token t, RIL_Errno e,
         void *response, size_t responselen);
 
+#if (RIL_VERSION == 12 && OSS_LIBRIL)
 extern void RIL_onRequestAck(RIL_Token t);
+#endif
 
 extern void RIL_setRilSocketName(char *);
 
@@ -80,8 +82,10 @@ extern void RIL_setRilSocketName(char * s) __attribute__((weak));
 static struct RIL_Env s_rilEnv = {
     RIL_onRequestComplete,
     RIL_onUnsolicitedResponse,
-    RIL_requestTimedCallback,
-    RIL_onRequestAck
+    RIL_requestTimedCallback
+#if (RIL_VERSION == 12 && OSS_LIBRIL)
+    ,RIL_onRequestAck
+#endif
 };
 
 extern void RIL_startEventLoop();
