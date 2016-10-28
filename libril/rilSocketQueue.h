@@ -16,7 +16,7 @@
 
 #include "pb_decode.h"
 #include <pthread.h>
-#include <hardware/ril/librilutils/proto/sap-api.pb.h>
+#include <hardware/ril-caf/librilutils/proto/sap-api.pb.h>
 #include <utils/Log.h>
 
 using namespace std;
