@@ -3567,6 +3567,7 @@ static int responseCellInfoListV6(Parcel &p, void *response, size_t responselen)
                 p.writeInt32(INT_MAX); /* skip bsic */
                 p.writeInt32(p_cur->CellInfo.gsm.signalStrengthGsm.signalStrength);
                 p.writeInt32(p_cur->CellInfo.gsm.signalStrengthGsm.bitErrorRate);
+                p.writeInt32(INT_MAX); /* skip timingAdvance */
                 break;
             }
             case RIL_CELL_INFO_TYPE_WCDMA: {
