@@ -154,5 +154,5 @@
     {RIL_REQUEST_CAF_SIM_OPEN_CHANNEL_WITH_P2, dispatchOpenChannelWithP2, responseInts},
     {RIL_REQUEST_GET_ADN_RECORD, dispatchVoid, responseInts},
     {RIL_REQUEST_UPDATE_ADN_RECORD, dispatchAdnRecord, responseInts},
-    {RIL_REQUEST_SET_CARRIER_RESTRICTIONS, dispatchCarrierRestrictions, responseInts},
-    {RIL_REQUEST_GET_CARRIER_RESTRICTIONS, dispatchVoid, responseCarrierRestrictions},
+    {RIL_REQUEST_SET_CARRIER_RESTRICTIONS, dispatchSetCarrierRestrictions, responseInts},
+    {RIL_REQUEST_GET_CARRIER_RESTRICTIONS, dispatchGetCarrierRestrictions, responseCarrierRestrictions},
